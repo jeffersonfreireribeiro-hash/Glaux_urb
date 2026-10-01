@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Text;
 using Rhino.Geometry;
 
@@ -12,11 +13,13 @@ namespace Buraqueira_Urb
     public class ShpFeature
     {
         public int RecordNumber { get; set; }
+        public string SourcePath { get; set; }
         public int ShapeType { get; set; }
         public List<Curve> Curves { get; set; } = new List<Curve>();
         public List<Point3d> Points { get; set; } = new List<Point3d>();
         public Brep Surface { get; set; }
         public Dictionary<string, object> Attributes { get; set; } = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        public override string ToString() => $"GIS Feature {RecordNumber} | Curves={Curves?.Count ?? 0} | Points={Points?.Count ?? 0} | Attributes={Attributes?.Count ?? 0}";
 
         public object GetAttribute(string fieldName)
         {
@@ -40,9 +43,15 @@ namespace Buraqueira_Urb
     /// </summary>
     public static class ShapefileReader
     {
-        public static List<ShpFeature> ReadShapefile(string shpPath, out List<string> fieldNames, string filter = null)
+        public static List<ShpFeature> ReadShapefile(string shpPath, out List<string> fieldNames,
+            string filter = null, string encodingName = null)
+            => ReadShapefile(shpPath, out fieldNames, out _, filter, encodingName);
+
+        public static List<ShpFeature> ReadShapefile(string shpPath, out List<string> fieldNames,
+            out string encodingInfo, string filter = null, string encodingName = null)
         {
             fieldNames = new List<string>();
+            encodingInfo = "EncodingSource=None (DBF absent)";
             var features = new List<ShpFeature>();
 
             if (string.IsNullOrWhiteSpace(shpPath) || !File.Exists(shpPath))
@@ -55,14 +64,8 @@ namespace Buraqueira_Urb
             List<Dictionary<string, object>> dbfRows = null;
             if (File.Exists(dbfPath))
             {
-                try
-                {
-                    dbfRows = ReadDbf(dbfPath, out fieldNames);
-                }
-                catch
-                {
-                    dbfRows = null;
-                }
+                var encoding = ResolveDbfEncoding(shpPath, dbfPath, encodingName, out encodingInfo);
+                dbfRows = ReadDbf(dbfPath, encoding, out fieldNames);
             }
 
             // 2. Ler Geometrias (.shp)
@@ -104,6 +107,7 @@ namespace Buraqueira_Urb
                     var feature = new ShpFeature
                     {
                         RecordNumber = recordNumber,
+                        SourcePath = shpPath,
                         ShapeType = shapeType
                     };
 
@@ -367,7 +371,52 @@ namespace Buraqueira_Urb
             public byte Decimals;
         }
 
-        private static List<Dictionary<string, object>> ReadDbf(string dbfPath, out List<string> fieldNames)
+        private static Encoding ResolveDbfEncoding(string shpPath, string dbfPath, string overrideName, out string info)
+        {
+            if (!string.IsNullOrWhiteSpace(overrideName) && !overrideName.Trim().Equals("Auto", StringComparison.OrdinalIgnoreCase))
+            {
+                var chosen = ParseEncoding(overrideName);
+                info = $"Encoding={chosen.WebName} | EncodingSource=User";
+                return chosen;
+            }
+            string cpgPath = Path.ChangeExtension(shpPath, ".cpg");
+            if (File.Exists(cpgPath))
+            {
+                string label = File.ReadAllText(cpgPath, Encoding.UTF8).Trim('\uFEFF', ' ', '\r', '\n', '\t');
+                if (label.Length == 0) throw new InvalidDataException($"Arquivo CPG vazio: {cpgPath}");
+                var chosen = ParseEncoding(label);
+                info = $"Encoding={chosen.WebName} | EncodingSource=CPG";
+                return chosen;
+            }
+            // DBF language-driver byte is explicit metadata only for the codes below.
+            byte[] header = new byte[32];
+            using (var fs = File.OpenRead(dbfPath))
+                if (fs.Read(header, 0, header.Length) != header.Length)
+                    throw new InvalidDataException("Cabeçalho DBF incompleto.");
+            int page = header[29] == 0x03 || header[29] == 0x57 ? 1252 :
+                header[29] == 0x01 ? 437 : header[29] == 0x02 ? 850 : 0;
+            if (page != 0)
+            {
+                var chosen = Encoding.GetEncoding(page, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+                info = $"Encoding={chosen.WebName} | EncodingSource=DBF-LDID(0x{header[29]:X2})";
+                return chosen;
+            }
+            // This is a declared fallback, not a claim that the file is Windows-1252.
+            var fallback = Encoding.GetEncoding(1252, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+            info = $"Encoding={fallback.WebName} | EncodingSource=Default (unverified)";
+            return fallback;
+        }
+
+        private static Encoding ParseEncoding(string label)
+        {
+            string value = label.Trim().Trim('"', '\'');
+            if (value.StartsWith("CP", StringComparison.OrdinalIgnoreCase)) value = value.Substring(2);
+            if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int codePage))
+                return Encoding.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+            return Encoding.GetEncoding(value, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        }
+
+        private static List<Dictionary<string, object>> ReadDbf(string dbfPath, Encoding encoding, out List<string> fieldNames)
         {
             fieldNames = new List<string>();
             var rows = new List<Dictionary<string, object>>();
@@ -422,17 +471,6 @@ namespace Buraqueira_Urb
                 // Posicionar no início dos registros
                 reader.BaseStream.Seek(headerLength, SeekOrigin.Begin);
 
-                // Detectar codificação de caracteres (Latin1 / Windows-1252 para nomes em português)
-                Encoding encoding;
-                try
-                {
-                    encoding = Encoding.GetEncoding(1252);
-                }
-                catch
-                {
-                    encoding = Encoding.UTF8;
-                }
-
                 for (int r = 0; r < numRecords; r++)
                 {
                     if (reader.BaseStream.Position >= reader.BaseStream.Length) break;
@@ -445,26 +483,29 @@ namespace Buraqueira_Urb
                         byte[] fieldBytes = reader.ReadBytes(f.Length);
                         string valStr = encoding.GetString(fieldBytes).Trim();
 
-                        object val = valStr;
-                        if (f.Type == 'N' || f.Type == 'F')
+                        object val = valStr.Length == 0 ? null : (object)valStr;
+                        if (valStr.Length > 0 && (f.Type == 'N' || f.Type == 'F'))
                         {
-                            if (double.TryParse(valStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double dVal))
-                            {
+                            if (f.Decimals == 0 && long.TryParse(valStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out long iVal))
+                                val = iVal;
+                            else if (double.TryParse(valStr, NumberStyles.Float, CultureInfo.InvariantCulture, out double dVal))
                                 val = dVal;
-                            }
                         }
-                        else if (f.Type == 'L') // Logical (Y, y, N, n, T, t, F, f)
+                        else if (f.Type == 'L' && valStr.Length > 0)
                         {
-                            val = (valStr.Equals("Y", StringComparison.OrdinalIgnoreCase) || valStr.Equals("T", StringComparison.OrdinalIgnoreCase));
+                            if (valStr.Equals("Y", StringComparison.OrdinalIgnoreCase) || valStr.Equals("T", StringComparison.OrdinalIgnoreCase)) val = true;
+                            else if (valStr.Equals("N", StringComparison.OrdinalIgnoreCase) || valStr.Equals("F", StringComparison.OrdinalIgnoreCase)) val = false;
+                            else val = null;
                         }
+                        else if (f.Type == 'D' && valStr.Length > 0 &&
+                            DateTime.TryParseExact(valStr, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime date))
+                            val = date;
 
                         row[f.Name] = val;
                     }
 
-                    if (deleteFlag != '*')
-                    {
-                        rows.Add(row);
-                    }
+                    // Keep one DBF slot per SHP record even for deleted rows.
+                    rows.Add(deleteFlag == '*' ? null : row);
                 }
             }
 

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../src/Urb/ShapefileReader.cs" Link="ShapefileReader.cs" />
+    <Compile Include="../../../src/Urb/GpkgReader.cs" Link="GpkgReader.cs" />
+    <Compile Include="../../../src/Urb/GisImportOutputs.cs" Link="GisImportOutputs.cs" />
+    <Compile Include="../../../src/Urb/StreetGisWriter.cs" Link="StreetGisWriter.cs" />
+  </ItemGroup>
+</Project>

@@ -6,7 +6,7 @@ subcategory: "01 | Infraestrutura Viária"
 class: "Buraqueira_Urb.StreetProfileFitting_Component"
 file: "src/Urb/StreetProfileFitting_Component.cs"
 plugin: "Glaux_Urb"
-status: "Correção compilada; abertura do mesmo documento no Grasshopper sem breakpoint confirmada"
+status: "1.2.0 com UX de entradas e diagnósticos ampliada; validação interativa desta versão pendente"
 tags: [componente, grasshopper, glaux_urb, fitting, perfil_viario]
 ---
 
@@ -18,13 +18,13 @@ Ajusta a sequência semântica às seções reais/adaptativas, preserva QL/QR e 
 
 | Nome | Nick | Tipo | Função |
 |---|---|---|---|
-| Street Profiles | Profile | StreetProfile / ProfiledStreet list, optional | Ponte de compatibilidade; aceita vários perfis quando `Sections` não estiver conectado |
-| Section Points | Pts | Point tree | Seções existentes de [[Road Transversals]] |
-| Planned Section Points | PlanPts | Point tree, optional | Proposta com QL/QR fixos |
+| Street Profiles | Profile | StreetProfile / ProfiledStreet list, optional | [[Street Profile Definition]].Profile ou [[Street Profile Assignment]].Profiled; opcional com `Sections` tipadas |
+| Section Points | Pts | Point tree `{rua;estaca}`, cinco pontos, required | [[Road Transversals]].Pts: lote E, meio-fio E, centro, meio-fio D, lote D |
+| Planned Section Points | PlanPts | Point tree `{rua;estaca}`, optional | [[Road Transversals]].PlanPts; QL/QR idênticos aos originais |
 | Street Path Index | PathIdx | Integer | Posição temporária em `{rua;estaca}`; fallback manual para árvore multivia sem SectionMeta; não é identidade |
 | Run | Run | Boolean | Executa |
 | Section Metadata | SectionMeta | Text tree, optional | `SourceStreetID` / `StreetName` / `Profile` de [[Road Transversals]] para seleção automática por identidade |
-| Profiled Sections | Sections | ProfiledSection tree, optional | Seções tipadas com perfil já associado; evita novo matching |
+| Profiled Sections | Sections | ProfiledSection tree `{rua;estaca}`, optional | [[Road Transversals]].Sections após ligar ProfileAssign.Profiled em Axis; evita novo matching |
 
 ## Outputs
 
@@ -40,9 +40,10 @@ Ajusta a sequência semântica às seções reais/adaptativas, preserva QL/QR e 
 
 ```mermaid
 flowchart LR
-  ASSIGN["[[Street Profile Assignment]]"] -->|Profiled / Profiles| FIT["[[Street Profile Fitting]]"]
-  DEF["[[Street Profile Definition]]"] -->|Profile| FIT
-  RT["[[Road Transversals]]"] -->|Pts, PlanPts e Sections| FIT
+  IMP["[[Shp Import]] / [[Gpkg Import]]"] -->|Features| ASSIGN["[[Street Profile Assignment]]"]
+  DEF["[[Street Profile Definition]]"] -->|Profile| ASSIGN
+  ASSIGN -->|Profiled| RT["[[Road Transversals]]"]
+  RT -->|Pts, PlanPts e Sections| FIT["[[Street Profile Fitting]]"]
   FIT -->|FitPts| SR["[[Sidewalk Regularization]]"]
   FIT -->|Adapted| RCS["[[Road Cross Section]]"]
 ```
@@ -52,3 +53,5 @@ Quando `Sections` está conectado, o fitting usa o `StreetProfile` embutido em c
 Em 1º de outubro de 2026, a entrada genérica `Sections` passou a ser lida por `VolatileData` e ramos `IGH_Goo`. A conversão exigida por `GetDataTree<GH_ObjectWrapper>` causava breakpoint na abertura do Grasshopper quando a árvore conectada tinha o tipo genérico real. A correção preserva os caminhos `{rua;estaca}` e o perfil embutido.
 
 Após instalar 1.1.1, o usuário reabriu o mesmo documento e confirmou ausência desse breakpoint. Essa verificação cobre a abertura do documento; resultados geométricos e demais interações ainda exigem teste próprio.
+
+Em 1.2.0, tooltips e runtime messages passam a indicar as ligações necessárias. `Pts` vazio explica o formato esperado; `Sections` conectado sem `ProfiledSection` acusa o tipo errado; `Profile` sem `StreetProfile` mostra o tipo recebido; seções rejeitadas resumem os primeiros conflitos no componente. O fitting numérico manteve o algoritmo anterior. Teste isolado 32/32; canvas Rhino desta versão ainda não validado.

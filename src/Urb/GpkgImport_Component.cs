@@ -18,7 +18,7 @@ namespace Buraqueira_Urb
             : base(
                 "Import GeoPackage",
                 "GpkgImport",
-                "Importa arquivos geoespaciais OGC GeoPackage (.gpkg) para curvas, superfícies e atributos no Rhino/Grasshopper com seleção de camadas.",
+                "Importa GeoPackage com Fields separado de Attributes tipados por feição; mantém Attrs legados e permite selecionar a camada.",
                 "Glaux Urb",
                 "00 | GIS & Dados Urbanos")
         {
@@ -49,8 +49,12 @@ namespace Buraqueira_Urb
             pManager.AddBrepParameter("Surfaces", "Srf", "Superfícies planas geradas para polígonos fechados (ex: quadras).", GH_ParamAccess.list);
             pManager.AddPointParameter("Points", "Pts", "Pontos ou vértices das feições.", GH_ParamAccess.list);
             pManager.AddTextParameter("Field Names", "Fields", "Lista de nomes das colunas da tabela de atributos.", GH_ParamAccess.list);
-            pManager.AddTextParameter("Attributes Tree", "Attrs", "Árvore de atributos das feições no formato {índice} -> [Campo: Valor].", GH_ParamAccess.tree);
+            pManager.AddTextParameter("Attributes Tree", "Attrs", "Legado: {feição} -> [Campo: Valor]. Use Attributes para valores limpos.", GH_ParamAccess.tree);
             pManager.AddTextParameter("Available Layers", "Layers", "Lista de todas as camadas de feições disponíveis dentro do GeoPackage.", GH_ParamAccess.list);
+            pManager.AddGenericParameter("Attributes", "Values", "Valores tipados por {feição}, na mesma ordem de Fields; NULL aparece como GisNullValue.", GH_ParamAccess.tree);
+            pManager.AddGenericParameter("Geometry by Feature", "Geometry", "Geometrias agrupadas por {feição}, no mesmo índice da árvore Attributes.", GH_ParamAccess.tree);
+            pManager.AddGenericParameter("GIS Features", "Features", "Feições tipadas com geometria, RecordNumber e atributos consultáveis por nome; conecte ao Street Profile Assignment.", GH_ParamAccess.list);
+            pManager.AddTextParameter("CRS", "CRS", "SRS ID declarado pela camada GeoPackage; sem reprojeção automática.", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -145,6 +149,13 @@ namespace Buraqueira_Urb
                 DA.SetDataList(2, outPoints);
                 DA.SetDataList(3, fieldNames);
                 DA.SetDataTree(4, attrTree);
+                GisImportOutputs.Build(features, fieldNames, out var values, out var geometry);
+                DA.SetDataTree(6, values);
+                DA.SetDataTree(7, geometry);
+                DA.SetDataList(8, features);
+                var selected = allLayers.Find(l => l.TableName.Equals(layerName, StringComparison.OrdinalIgnoreCase) ||
+                    l.Identifier.Equals(layerName, StringComparison.OrdinalIgnoreCase)) ?? (allLayers.Count > 0 ? allLayers[0] : null);
+                DA.SetData(9, selected == null ? "Unknown" : $"SRS ID={selected.SrsId}");
 
                 Message = $"{features.Count} Feições";
             }

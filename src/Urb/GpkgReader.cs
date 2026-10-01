@@ -30,14 +30,36 @@ namespace Buraqueira_Urb
     {
         private const string SQLITE_DLL = "winsqlite3.dll";
 
-        [DllImport(SQLITE_DLL, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private static extern int sqlite3_open_v2(string filename, out IntPtr ppDb, int flags, string zVfs);
+        private static string Utf8Column(IntPtr statement, int column)
+        {
+            IntPtr pointer = sqlite3_column_text(statement, column);
+            int length = sqlite3_column_bytes(statement, column);
+            if (pointer == IntPtr.Zero || length <= 0) return null;
+            var bytes = new byte[length];
+            Marshal.Copy(pointer, bytes, 0, length);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        private static string Utf8Name(IntPtr pointer)
+        {
+            if (pointer == IntPtr.Zero) return null;
+            int length = 0;
+            while (Marshal.ReadByte(pointer, length) != 0) length++;
+            var bytes = new byte[length];
+            Marshal.Copy(pointer, bytes, 0, length);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        [DllImport(SQLITE_DLL, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int sqlite3_open_v2(byte[] filename, out IntPtr ppDb, int flags, IntPtr zVfs);
 
         [DllImport(SQLITE_DLL, CallingConvention = CallingConvention.Cdecl)]
         private static extern int sqlite3_close(IntPtr db);
 
-        [DllImport(SQLITE_DLL, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private static extern int sqlite3_prepare_v2(IntPtr db, string zSql, int nByte, out IntPtr ppStmt, IntPtr pzTail);
+        [DllImport(SQLITE_DLL, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int sqlite3_prepare_v2(IntPtr db, byte[] zSql, int nByte, out IntPtr ppStmt, IntPtr pzTail);
+
+        private static byte[] SqliteUtf8(string value) => Encoding.UTF8.GetBytes(value + "\0");
 
         [DllImport(SQLITE_DLL, CallingConvention = CallingConvention.Cdecl)]
         private static extern int sqlite3_step(IntPtr stmt);
@@ -88,7 +110,7 @@ namespace Buraqueira_Urb
             var layers = new List<GpkgLayerInfo>();
             if (string.IsNullOrWhiteSpace(gpkgPath) || !File.Exists(gpkgPath)) return layers;
 
-            if (sqlite3_open_v2(gpkgPath, out IntPtr db, SQLITE_OPEN_READONLY, null) != SQLITE_OK)
+            if (sqlite3_open_v2(SqliteUtf8(gpkgPath), out IntPtr db, SQLITE_OPEN_READONLY, IntPtr.Zero) != SQLITE_OK)
             {
                 return layers;
             }
@@ -101,17 +123,17 @@ namespace Buraqueira_Urb
                              "LEFT JOIN gpkg_geometry_columns g ON c.table_name = g.table_name " +
                              "WHERE c.data_type = 'features';";
 
-                if (sqlite3_prepare_v2(db, sql, -1, out IntPtr stmt, IntPtr.Zero) == SQLITE_OK)
+                if (sqlite3_prepare_v2(db, SqliteUtf8(sql), -1, out IntPtr stmt, IntPtr.Zero) == SQLITE_OK)
                 {
                     while (sqlite3_step(stmt) == SQLITE_ROW)
                     {
-                        string tableName = Marshal.PtrToStringAnsi(sqlite3_column_text(stmt, 0)) ?? "";
-                        string dataType = Marshal.PtrToStringAnsi(sqlite3_column_text(stmt, 1)) ?? "";
-                        string identifier = Marshal.PtrToStringAnsi(sqlite3_column_text(stmt, 2)) ?? "";
-                        string desc = Marshal.PtrToStringAnsi(sqlite3_column_text(stmt, 3)) ?? "";
+                        string tableName = Utf8Column(stmt, 0) ?? "";
+                        string dataType = Utf8Column(stmt, 1) ?? "";
+                        string identifier = Utf8Column(stmt, 2) ?? "";
+                        string desc = Utf8Column(stmt, 3) ?? "";
                         int srs = (int)sqlite3_column_int64(stmt, 4);
-                        string geomCol = Marshal.PtrToStringAnsi(sqlite3_column_text(stmt, 5)) ?? "geom";
-                        string geomType = Marshal.PtrToStringAnsi(sqlite3_column_text(stmt, 6)) ?? "GEOMETRY";
+                        string geomCol = Utf8Column(stmt, 5) ?? "geom";
+                        string geomType = Utf8Column(stmt, 6) ?? "GEOMETRY";
 
                         layers.Add(new GpkgLayerInfo
                         {
@@ -154,29 +176,31 @@ namespace Buraqueira_Urb
             {
                 targetLayer = layers.Find(l => l.TableName.Equals(layerName, StringComparison.OrdinalIgnoreCase) ||
                                                l.Identifier.Equals(layerName, StringComparison.OrdinalIgnoreCase));
+                if (targetLayer == null)
+                    throw new InvalidDataException($"Camada GeoPackage não encontrada: {layerName}");
             }
             if (targetLayer == null)
             {
                 targetLayer = layers[0];
             }
 
-            if (sqlite3_open_v2(gpkgPath, out IntPtr db, SQLITE_OPEN_READONLY, null) != SQLITE_OK)
+            if (sqlite3_open_v2(SqliteUtf8(gpkgPath), out IntPtr db, SQLITE_OPEN_READONLY, IntPtr.Zero) != SQLITE_OK)
             {
                 return features;
             }
 
             try
             {
-                string sql = $"SELECT * FROM \"{targetLayer.TableName}\";";
+                string sql = $"SELECT * FROM \"{targetLayer.TableName.Replace("\"", "\"\"")}\";";
 
-                if (sqlite3_prepare_v2(db, sql, -1, out IntPtr stmt, IntPtr.Zero) == SQLITE_OK)
+                if (sqlite3_prepare_v2(db, SqliteUtf8(sql), -1, out IntPtr stmt, IntPtr.Zero) == SQLITE_OK)
                 {
                     int colCount = sqlite3_column_count(stmt);
                     int geomColIdx = -1;
 
                     for (int c = 0; c < colCount; c++)
                     {
-                        string cName = Marshal.PtrToStringAnsi(sqlite3_column_name(stmt, c)) ?? $"col_{c}";
+                        string cName = Utf8Name(sqlite3_column_name(stmt, c)) ?? $"col_{c}";
                         if (cName.Equals(targetLayer.GeometryColumn, StringComparison.OrdinalIgnoreCase))
                         {
                             geomColIdx = c;
@@ -190,14 +214,14 @@ namespace Buraqueira_Urb
                     int recNum = 1;
                     while (sqlite3_step(stmt) == SQLITE_ROW)
                     {
-                        var feat = new ShpFeature { RecordNumber = recNum++ };
+                        var feat = new ShpFeature { RecordNumber = recNum++, SourcePath = gpkgPath };
 
                         // Ler atributos
                         for (int c = 0; c < colCount; c++)
                         {
                             if (c == geomColIdx) continue;
 
-                            string cName = Marshal.PtrToStringAnsi(sqlite3_column_name(stmt, c)) ?? $"col_{c}";
+                            string cName = Utf8Name(sqlite3_column_name(stmt, c)) ?? $"col_{c}";
                             int type = sqlite3_column_type(stmt, c);
 
                             object val = null;
@@ -213,6 +237,13 @@ namespace Buraqueira_Urb
                                     Marshal.Copy(ptr, buf, 0, bytes);
                                     val = Encoding.UTF8.GetString(buf);
                                 }
+                            }
+                            else if (type == SQLITE_BLOB)
+                            {
+                                int bytes = sqlite3_column_bytes(stmt, c);
+                                var buf = new byte[bytes];
+                                if (bytes > 0) Marshal.Copy(sqlite3_column_blob(stmt, c), buf, 0, bytes);
+                                val = buf;
                             }
                             feat.Attributes[cName] = val;
                         }

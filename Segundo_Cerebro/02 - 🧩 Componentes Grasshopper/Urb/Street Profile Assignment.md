@@ -51,7 +51,7 @@ flowchart LR
 1. **Relação 1-para-N (Um perfil para múltiplos segmentos):** Um único `StreetProfile` com `StreetName = "Rua Amazonas"` associa-se automaticamente a todos os segmentos cadastrais cujo campo GIS corresponda a esse nome.
 2. **Normalização Robusta (`Mode = 0`):** Remove espaços residuais nas extremidades, colapsa sequências de múltiplos espaços internos (`"Rua   Amazonas"` $\to$ `"Rua Amazonas"`) e compara em caixa alta insensível.
 3. **Detecção de Ambiguidade:** Se dois ou mais perfis distintos possuírem o mesmo `StreetName`, as vias afetadas não são casadas silenciosamente; são emitidas em `Ambiguous` com o código `AMBIGUOUS_PROFILE_MATCH`.
-4. **Acoplamento a Jusante:** `ProfiledStreet` alimenta `Axis` de [[Road Transversals]]. A saída tipada `Sections` transporta o perfil diretamente ao [[Street Profile Fitting]], sem novo matching por nome. `SectionMeta` e `Profile` continuam como ponte de compatibilidade.
+4. **Acoplamento a Jusante:** `ProfiledStreet` alimenta `Axis` de [[Road Transversals]]. A saída tipada `Sections` transporta o perfil diretamente ao [[Street Profile Fitting]], sem novo matching por nome. `SectionMeta` e `Profile` continuam como ponte de compatibilidade. Desde 1.2.0, `Streets` também aceita `Features` de [[Shp Import]]/[[Gpkg Import]] e consulta `NameField` no mapa tipado de atributos da feição.
 5. **Identidade:** Atributos GIS válidos (`STREET_ID`, `ID_LOGRADOURO`, `ID_LOG`, `COD_LOG`, `ID`, `FID`) geram `StreetID` de origem. Sem eles, um fingerprint de nome e geometria substitui o número de registro. O `id` do SHP real de Picuí contém asteriscos e é rejeitado.
 
 ## Ícone Vetorial Nativo

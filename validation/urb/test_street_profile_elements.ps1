@@ -43,6 +43,27 @@ Check ($r.Success -and [math]::Abs((($r.Profile.Elements | Measure-Object -Prope
 Check ((@($r.Profile.Elements | Where-Object { $_.FittedWidth -lt $_.MinimumWidth -or $_.FittedWidth -gt $_.MaximumWidth })).Count -eq 0) 'all fitted widths inside domains'
 $fixed=Profile @((Element 'Sidewalk' 2 2),(Element 'Road' 3 3));$r=$f::Fit($fixed,5)
 Check ($r.Success -and $r.Profile.Elements[0].FittedWidth -eq 2) 'fixed domain remains fixed'
+$minLeft=Element 'Sidewalk' 2.5 1.5;$minRight=Element 'Sidewalk' 2.5 1.5;$lane=Element 'Lane' 3 3
+$three=Profile @($minLeft,$lane,$minRight)
+$r=$f::Fit($three,6)
+Check ($r.Success -and [math]::Abs($r.Profile.Elements[0].FittedWidth-1.5) -lt 1e-8 -and
+    [math]::Abs($r.Profile.Elements[1].FittedWidth-3.0) -lt 1e-8 -and
+    [math]::Abs($r.Profile.Elements[2].FittedWidth-1.5) -lt 1e-8) 'exact required minimum of number and domains'
+$r=$f::Fit($three,7)
+Check ($r.Success -and [math]::Abs((($r.Profile.Elements | Measure-Object -Property FittedWidth -Sum).Sum)-7) -lt 1e-7) 'intermediate available width filled'
+Check ($r.Profile.Elements[1].FittedWidth -eq 3 -and $r.Profile.Elements[0].FittedWidth -ge 1.5 -and $r.Profile.Elements[2].FittedWidth -ge 1.5) 'fixed lane and sidewalk minima retained'
+$r=$f::Fit($three,5.9)
+Check (-not $r.Success -and $r.Reason -eq 'INSUFFICIENT_PUBLIC_WIDTH' -and $r.Diagnostic.StartsWith('PROFILE_CONFLICT')) 'below required minimum yields conflict'
+$r=$f::Fit($three,8.1)
+Check (-not $r.Success -and $r.Reason -eq 'EXCESS_WIDTH' -and $r.Excess -gt 0) 'above maximum yields explicit excess'
+$kinds=@('Sidewalk','Tree Strip','Parking','Lane','Lane','Median','Lane','Lane','Parking','Tree Strip','Sidewalk')
+$widths=@(1.5,1.0,2.0,3.0,3.0,1.0,3.0,3.0,2.0,1.0,1.5)
+$dynamicElements=@(for($i=0;$i -lt $kinds.Count;$i++){Element $kinds[$i] $widths[$i] $widths[$i] $true})
+$dynamic=Profile $dynamicElements
+$r=$f::Fit($dynamic,($widths | Measure-Object -Sum).Sum)
+Check ($r.Success -and $r.Profile.Elements.Count -eq 11) 'eleven dynamic elements accepted'
+Check ((($r.Profile.Elements | ForEach-Object Id) -join ',') -eq (($dynamic.Elements | ForEach-Object Id) -join ',')) 'dynamic element IDs and order preserved'
+Check ((($r.Profile.Elements | ForEach-Object Type) -join ',') -eq ($kinds -join ',')) 'dynamic element types retained'
 $gap=Profile @((Element 'Road' 3 3),(Element 'Median' 2 2 $false));$r=$f::Fit($gap,4)
 Check (-not $r.Success -and $r.Reason -eq 'WIDTH_DOMAIN_GAP') 'optional fixed-band gap reported'
 $assignmentProfile=Profile @((Element 'Road' 3 2));$assignmentProfile.StreetName='Rua Amazonas'

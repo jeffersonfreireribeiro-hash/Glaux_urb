@@ -2,7 +2,26 @@
 
 ## Unreleased
 
-Nenhuma alteração funcional posterior ao marco 1.1.1 registrada.
+Nenhuma alteração funcional posterior ao marco 1.2.0 registrada.
+
+## 1.2.0 — 2026-10-01
+
+### Added
+
+- `Import Shapefile` e `Import GeoPackage` expõem `Attributes` (`Values`) tipados por `{feição}`, alinhados item a item a `Fields`, além de `Geometry by Feature`, `GIS Features` e `CRS`. As saídas anteriores e `Attrs` textuais continuam nos mesmos índices para compatibilidade.
+- `Import Shapefile` aceita `Encoding` manual. Em Auto lê `.cpg`, depois códigos de idioma DBF conhecidos, e declara o fallback Windows-1252 como não verificado em `EncInfo`. DBF preserva inteiros, doubles, booleanos, datas e NULL distinto de texto vazio na saída genérica.
+- `Street Profile Assignment` aceita diretamente `Features` dos dois importadores e busca `NameField` no dicionário tipado de atributos.
+
+### Fixed
+
+- Registros DBF marcados como excluídos preservam sua posição relativa ao SHP, evitando atributos associados à geometria errada.
+- Leitura de metadados, nomes de campos, caminhos e texto do GeoPackage usa UTF-8 explícito no SQLite.
+- `Street Profile Fitting` explica no próprio componente as ligações esperadas, tipos incorretos e conflitos por seção.
+
+### Compatibility and verification
+
+- Inputs/outputs existentes dos importadores são mantidos; no SHP, `Run` continua último input e passa do índice 2 para 3 após a inserção de `Encoding`. Definições `.gh` antigas com ligação explícita em `Run` devem ser conferidas ao reabrir.
+- Debug/Release sem warnings; 63 verificações dos leitores SHP/GPKG e árvore comum, 32 do fitting, 11 dos lotes, 12 das seções e testes de escrita GIS passaram. Validação interativa desta versão no Rhino/Grasshopper ainda pendente.
 
 ## 1.1.1 — 2026-10-01
 

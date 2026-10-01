@@ -32,7 +32,7 @@ namespace Buraqueira_Urb
         {
             // 0: Logradouros (Eixos viários)
             p.AddGenericParameter("Logradouros (GIS)", "Streets",
-                "Eixos dos logradouros (Caminho para arquivo .shp / .gpkg, lista de Curvas do Rhino ou feições GIS importadas).",
+                "Eixos dos logradouros: caminho .shp/.gpkg, curvas do Rhino ou saída Features de Import Shapefile/GeoPackage. O nome é lido do atributo NameField, sem parsing de strings de painel.",
                 GH_ParamAccess.list);
 
             // 1: Street Profiles (Definições de perfil)
@@ -113,6 +113,7 @@ namespace Buraqueira_Urb
                 if (item == null) continue;
                 object unwrapped = item;
                 while (unwrapped is GH_ObjectWrapper wrapper) unwrapped = wrapper.Value;
+
                 if (unwrapped is StreetProfile sp)
                 {
                     profiles.Add(sp);
@@ -176,6 +177,26 @@ namespace Buraqueira_Urb
 
                 object unwrapped = item;
                 while (unwrapped is GH_ObjectWrapper wrapper) unwrapped = wrapper.Value;
+
+                // Import SHP/GPKG exposes a common feature object. Resolve names
+                // from its typed attribute map, never by parsing panel strings.
+                if (unwrapped is ShpFeature imported)
+                {
+                    string chosenField = FindStreetNameField(imported.Attributes?.Keys.ToList() ?? new List<string>(), nameField);
+                    string streetName = chosenField == null ? "" : imported.GetAttributeString(chosenField);
+                    if (imported.Curves != null)
+                        foreach (var curve in imported.Curves)
+                            if (curve != null && curve.IsValid)
+                                result.Add(new RawGisStreetItem
+                                {
+                                    Geometry = curve,
+                                    Name = streetName,
+                                    SourceId = FeatureId(Path.GetFileName(imported.SourcePath ?? "import"), imported.Attributes, curve, streetName),
+                                    FeatureIndex = imported.RecordNumber,
+                                    Attributes = imported.Attributes
+                                });
+                    continue;
+                }
 
                 // Caso A: Se já é ProfiledStreet
                 if (unwrapped is ProfiledStreet ps)

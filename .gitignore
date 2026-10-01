@@ -27,6 +27,9 @@ Directory.Build.local.props
 !/validation/urb/test_adaptive_sections.ps1
 !/validation/urb/test_street_gis_writer.ps1
 !/validation/urb/test_street_shp_writer.ps1
+!/validation/urb/GisImportContractTests/
+!/validation/urb/GisImportContractTests/*.cs
+!/validation/urb/GisImportContractTests/*.csproj
 /docs/*
 !/docs/GLAUX_URB_*.md
 /Segundo_Cerebro/

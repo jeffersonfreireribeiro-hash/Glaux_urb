@@ -13,22 +13,22 @@ namespace Buraqueira_Urb
     {
         public StreetProfileFitting_Component() : base(
             "Street Profile Fitting", "ProfileFit",
-            "Ajusta um StreetProfile ordenado às seções adaptativas, preservando limites de lote e registrando elementos suprimidos.",
+            "Ligue Pts e Sections de Road Transversals (Axis vindo de ProfileAssign.Profiled). Alternativa: Profile + Pts de uma via; para várias vias use SectionMeta. Ajusta larguras sem mover lotes.",
             "Glaux Urb", "01 | Infraestrutura Viária") { }
         public override Guid ComponentGuid => new Guid("a02b5df9-c46e-4842-9be6-d63c12861642");
         protected override System.Drawing.Bitmap Icon => GlauxUrbIcons.StreetProfileFitting;
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddGenericParameter("Street Profiles", "Profile", "Um ou vários StreetProfile/Objects ProfiledStreet; cada via é ajustada com seu perfil.", GH_ParamAccess.list);
+            p.AddGenericParameter("Street Profiles", "Profile", "Opcional com Sections tipadas. Alternativa: saída Profile de Street Profile Definition ou lista Profiled de Assignment. Para várias vias ligue SectionMeta; para uma, Pts basta.", GH_ParamAccess.list);
             p[0].Optional = true;
-            p.AddPointParameter("Section Points", "Pts", "Seções de Road Transversals por {rua;estaca}.", GH_ParamAccess.tree);
-            p.AddPointParameter("Planned Section Points", "PlanPts", "Opcional; deve manter QL/QR originais em cada ramo.", GH_ParamAccess.tree);
+            p.AddPointParameter("Section Points", "Pts", "Obrigatório: saída Pts de Road Transversals, árvore {rua;estaca} com exatamente [limite lote E, meio-fio E, centro, meio-fio D, limite lote D].", GH_ParamAccess.tree);
+            p.AddPointParameter("Planned Section Points", "PlanPts", "Opcional: saída PlanPts de Road Transversals; cada ramo deve manter os limites de lote de Pts.", GH_ParamAccess.tree);
             p[2].Optional = true;
             p.AddIntegerParameter("Street Path Index", "PathIdx", "Seleção manual da posição {rua;estaca} em Pts quando não há SectionMeta; não é identidade da via. -1 usa Street/SourceStreetID ou a única rua.", GH_ParamAccess.item, -1);
             p.AddBooleanParameter("Run", "Run", "Executa o ajuste.", GH_ParamAccess.item, true);
             p.AddTextParameter("Section Metadata", "SectionMeta", "Ponte legada: associa via/perfil pelo SourceStreetID ou nome; prefira Sections tipadas. ID de arquivo bruto pode ser posicional.", GH_ParamAccess.tree);
             p[5].Optional = true;
-            p.AddGenericParameter("Profiled Sections", "Sections", "Opcional: saída Sections de Road Transversals com o perfil já associado; evita novo matching.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Profiled Sections", "Sections", "Preferido: saída Sections de Road Transversals após ligar ProfileAssign.Profiled em Axis. Mesmo caminho {rua;estaca} de Pts, com StreetProfile embutido.", GH_ParamAccess.tree);
             p[6].Optional = true;
         }
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -49,7 +49,7 @@ namespace Buraqueira_Urb
             GH_Structure<GH_Point> sections, planned;
             da.GetDataTree(1, out sections); da.GetDataTree(2, out planned);
             if (sections == null || sections.DataCount == 0)
-            { AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Section Points vazio."); return; }
+            { AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Street Profile Fitting: ligue Road Transversals.Pts em Pts; esperado ramo {rua;estaca} com cinco pontos."); return; }
             // Generic GH parameters expose IGH_Goo branches. GetDataTree<T> only
             // accepts an exact T and breaks when GH_ObjectWrapper is requested here.
             var typedSections=Params.Input[6].VolatileData;
@@ -62,10 +62,22 @@ namespace Buraqueira_Urb
                     if(section!=null) typedByPath[typedSections.Paths[i].ToString()]=section;
                 }
             bool hasTyped=typedByPath.Count>0;
+            if (Params.Input[6].SourceCount > 0 && !hasTyped)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    "Street Profile Fitting: Sections está conectado, mas não contém ProfiledSection. Ligue Road Transversals.Sections e alimente Axis com ProfileAssign.Profiled.");
+                return;
+            }
             profiles.AddRange(typedByPath.Values.Where(x=>x.StreetProfile!=null)
                 .Select(x=>x.StreetProfile).Where(x=>!profiles.Contains(x)));
             if (profiles.Count == 0)
-            { AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Conecte Profile, ProfiledStreet ou Sections com perfis associados."); return; }
+            {
+                string received = values.Count == 0 ? "nada" : string.Join(", ", values.Where(x => x != null)
+                    .Select(x => x.GetType().Name).Distinct().Take(3));
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    $"Street Profile Fitting: esperado StreetProfile em Profile ou ProfiledSection em Sections; recebido {received}. Ligue Definition.Profile ou Road Transversals.Sections.");
+                return;
+            }
             int streetIndex = -1; da.GetData(3, ref streetIndex);
             var ids = sections.Paths.Where(x => x.Indices.Length >= 2).Select(x => x.Indices[0]).Distinct().ToList();
             GH_Structure<GH_String> metadata; da.GetDataTree(5, out metadata);
@@ -121,7 +133,7 @@ namespace Buraqueira_Urb
                     "PathIdx não pode substituir a identidade de SectionMeta; verifique os perfis e SourceStreetID."); return;
             }
             if(!hasTyped && profilesByPath.Count==0 && ambiguousPaths.Count==0)
-            {AddRuntimeMessage(GH_RuntimeMessageLevel.Error,"Nenhum perfil corresponde às seções. Conecte SectionMeta ou selecione PathIdx para uma única definição.");return;}
+            {AddRuntimeMessage(GH_RuntimeMessageLevel.Error,"Street Profile Fitting: nenhum perfil corresponde aos caminhos de Pts. Para uma via, conecte Definition.Profile; para várias, conecte Road Transversals.Sections ou SectionMeta com SourceStreetID. PathIdx seleciona posição, não identidade.");return;}
             bool usePlanned = Params.Input[2].SourceCount > 0;
             var adapted = new GH_Structure<GH_String>();
             var fittedPoints = new GH_Structure<GH_Point>();
@@ -149,7 +161,7 @@ namespace Buraqueira_Urb
                     { Conflict("UNMATCHED_STREET"); continue; }
                 }
                 var pts = sections.Branches[i];
-                if (!ValidFive(pts)) { Conflict("INVALID_SECTION_POINTS"); continue; }
+                if (!ValidFive(pts)) { Conflict("INVALID_SECTION_POINTS: Pts deve conter cinco pontos válidos [lote E, meio-fio E, centro, meio-fio D, lote D]"); continue; }
                 var ql = pts[0].Value; var qr = pts[4].Value;
                 if(typedSection!=null && (typedSection.Points==null || typedSection.Points.Length!=5 ||
                     typedSection.Points[0].DistanceTo(ql)>.01 || typedSection.Points[4].DistanceTo(qr)>.01))
@@ -221,6 +233,12 @@ namespace Buraqueira_Urb
             da.SetDataTree(0,adapted); da.SetDataTree(1,fittedPoints);
             da.SetDataTree(2,conflicts); da.SetDataTree(3,fittedProfiles);
             da.SetData(4,$"Profiles={profiles.Count} | StreetPaths={(hasTyped?typedByPath.Values.Select(x=>x.StreetPathIndex).Distinct().Count():profilesByPath.Count)} | Fitted={good.Count-invalid.Count} | Conflicts={rejected} | Suppressed={suppressed}. Order and ElementIDs preserved; lot boundaries fixed.");
+            if (rejected > 0)
+            {
+                string examples = string.Join("; ", conflicts.AllData(true).Take(3).Select(x => x.ToString()));
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    $"Street Profile Fitting: {rejected} seção(ões) rejeitada(s). Consulte Conflicts por caminho {{rua;estaca}}. {examples}");
+            }
             Message = $"{good.Count-invalid.Count} fit";
         }
 

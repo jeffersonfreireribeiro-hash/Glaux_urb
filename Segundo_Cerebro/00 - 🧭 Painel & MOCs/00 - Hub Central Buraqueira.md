@@ -124,6 +124,7 @@ Ver [[DevLog - 2026-09-28 - Resolucao Travamento Ray Tracing Grids Densos 0.5m]]
 - [[Street Profile Definition]] usa `+`/`−` nativos para faixas ordenadas e emite `StreetProfile` semântico.
 - [[Street Profile Fitting]] ajusta cada seção sem deslocar lotes e preserva IDs/status dos elementos.
 - Correção `1.1.1`: [[Street Profile Fitting]] lê `Sections` por ramos genéricos `IGH_Goo`, evitando breakpoint de `GetDataTree<GH_ObjectWrapper>` ao abrir o Grasshopper.
+- Versão `1.2.0`: [[Shp Import]] e [[Gpkg Import]] separam `Fields` de `Attributes` tipados, mantêm `Attrs` legado e associam valores/geometria por `{feição}`. SHP lê `.cpg` ou override de encoding. [[Street Profile Fitting]] explica erros de ligação no próprio componente. Auditoria: `docs/GLAUX_URB_GIS_IMPORT_PROFILE_FITTING_2026-10-01.md`.
 - A versão fixa anterior fica oculta com GUID preservado; teste interativo de serialização/UI no Rhino pendente.
 - Em 2026-10-01, [[Street Profile Definition]] passou a persistir tipo, sentido e obrigatoriedade em cada input variável; `Street Type` global e `ElementType` individual ficaram explícitos. Composições contraditórias geram `PROFILE_TYPE_MISMATCH`.
 - [[Street Profile Definition]] agora emite `WidthDomain [mínimo,máximo]` por faixa; [[Street Profile Fitting]] limita o ajuste ao domínio e associa ruas por `SectionMeta.SourceStreetID` quando disponível. Ver `docs/GLAUX_URB_WIDTH_DOMAIN_STREET_IDENTITY_2026-10-01.md`.
