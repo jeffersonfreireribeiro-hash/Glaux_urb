@@ -50,12 +50,15 @@ namespace Buraqueira_Urb
             da.GetDataTree(1, out sections); da.GetDataTree(2, out planned);
             if (sections == null || sections.DataCount == 0)
             { AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Section Points vazio."); return; }
-            GH_Structure<GH_ObjectWrapper> typedSections; da.GetDataTree(6,out typedSections);
+            // Generic GH parameters expose IGH_Goo branches. GetDataTree<T> only
+            // accepts an exact T and breaks when GH_ObjectWrapper is requested here.
+            var typedSections=Params.Input[6].VolatileData;
             var typedByPath=new Dictionary<string,ProfiledSection>();
             if(typedSections!=null)
                 for(int i=0;i<typedSections.PathCount;i++)
                 {
-                    var section=typedSections.Branches[i].Select(Unwrap).OfType<ProfiledSection>().FirstOrDefault();
+                    var section=typedSections.get_Branch(i).Cast<IGH_Goo>()
+                        .Select(Unwrap).OfType<ProfiledSection>().FirstOrDefault();
                     if(section!=null) typedByPath[typedSections.Paths[i].ToString()]=section;
                 }
             bool hasTyped=typedByPath.Count>0;

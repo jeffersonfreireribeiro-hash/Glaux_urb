@@ -2,7 +2,7 @@
 
 Plugin experimental para Rhino 8 e Grasshopper, desenvolvido em C# / .NET Framework 4.8. Combina importação GIS, definição dinâmica de perfis viários, associação de perfis a logradouros, seções adaptativas, fitting com limites de lote, geração longitudinal parcial e exportação GIS.
 
-Versão de desenvolvimento atual: **1.1.0**. O número evolui da versão legada `1.0.0.0` exibida antes do início do histórico Git e não indica estabilidade completa.
+Versão de desenvolvimento atual: **1.1.1**. O número evolui da versão legada `1.0.0.0` exibida antes do início do histórico Git e não indica estabilidade completa.
 
 ## Estado atual
 

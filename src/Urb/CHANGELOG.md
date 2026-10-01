@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-Nenhuma alteração funcional posterior ao marco 1.1.0 registrada.
+Nenhuma alteração funcional posterior ao marco 1.1.1 registrada.
+
+## 1.1.1 — 2026-10-01
+
+### Fixed
+
+- `Street Profile Fitting` agora lê a entrada genérica `Sections` diretamente dos ramos `IGH_Goo`. A chamada anterior de `GetDataTree<GH_ObjectWrapper>` disparava um breakpoint do Grasshopper ao carregar o documento com `ProfiledSection` conectado.
+
+### Verification
+
+- Builds Debug/Release e testes puros de perfil, lotes, seções e escritores GIS. Validação após reinstalação no Rhino/Grasshopper pendente.
 
 ## 1.1.0 — 2026-10-01
 

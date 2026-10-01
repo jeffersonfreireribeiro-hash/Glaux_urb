@@ -156,5 +156,5 @@ Ver [[DevLog - 2026-09-26 - Calibracao GPU e BDPT Preservado]]. BDPT/NEE mantido
 ## Glaux Urb — perfil composto dinâmico & atribuição GIS
 - [[Street Profile Definition]] — Street, Street Type e faixas variáveis com tipo/sentido/obrigatoriedade persistidos em cada parâmetro; Tree Strip e Furniture Strip incluídos.
 - [[Street Profile Assignment]] — Associação 1-para-N entre perfis conceituais e vias reais de atributos GIS (`NOME_LOG`), com modos exato/normalizado, detecção de conflitos (`UNMATCHED_STREET`, `AMBIGUOUS_PROFILE_MATCH`) e emissão de `ProfiledStreet`.
-- [[Street Profile Fitting]] — `Sections` tipadas + `Pts`/`PlanPts` → `Adapted`, `FitPts`, conflitos e objeto ajustado; listas de perfis com `SectionMeta` seguem como ponte de compatibilidade.
+- [[Street Profile Fitting]] — `Sections` tipadas + `Pts`/`PlanPts` → `Adapted`, `FitPts`, conflitos e objeto ajustado; leitura genérica de `Sections` corrigida em 1.1.1; listas de perfis com `SectionMeta` seguem como ponte de compatibilidade.
 - Width Domain por faixa: `MinimumWidth|MaximumWidth`, largura fixa `[n,n]`, limites rígidos no fitting e `EXCESS_WIDTH` quando a caixa pública excede a soma dos máximos. `SectionMeta.SourceStreetID` / `StreetName` associam a via; `PathIdx` é posição temporária de fallback.
