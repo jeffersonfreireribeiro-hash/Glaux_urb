@@ -3,7 +3,8 @@
     <TargetFramework>net48</TargetFramework>
     <AssemblyName>Glaux_Urb</AssemblyName>
     <OutputType>Library</OutputType>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>1.1.0</Version>
     <UseWindowsForms>true</UseWindowsForms>
     <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
     <TargetExt>.gha</TargetExt>

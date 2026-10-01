@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Nenhuma alteração funcional posterior ao marco 1.1.0 registrada.
+
+## 1.1.0 — 2026-10-01
+
 ### Added
 
 - `Export Streets to GIS`: GeoPackage relacional, camadas SHP/CSV de compatibilidade, identidade semântica e por feição, perfis dinâmicos e larguras reais das seções quando disponíveis.
