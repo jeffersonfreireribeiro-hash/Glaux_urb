@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <GlauxRoot>$(MSBuildThisFileDirectory)</GlauxRoot>
+    <RhinoInstallDir Condition="'$(RhinoInstallDir)' == ''">$(ProgramW6432)\Rhino 8</RhinoInstallDir>
+    <PachydermDir Condition="'$(PachydermDir)' == ''">$(GlauxRoot)dependencies\Pachyderm</PachydermDir>
+    <!-- Binários sem o caminho local da máquina de build (PDB e mensagens): a pasta vira /_/ (§5 #35). -->
+    <PathMap>$(GlauxRoot)=/_/</PathMap>
+  </PropertyGroup>
+  <Import Project="$(GlauxRoot)Directory.Build.local.props" Condition="Exists('$(GlauxRoot)Directory.Build.local.props')" />
+</Project>

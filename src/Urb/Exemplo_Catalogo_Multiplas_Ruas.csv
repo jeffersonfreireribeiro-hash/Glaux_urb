@@ -1,0 +1,14 @@
+Nome_Via, Quadra_Esq, Passeio_Esq, Faixa_Rolamento, Passeio_Dir, Quadra_Dir, Tipo
+Rua Santo Antônio, Quadra 21, 1.80, 6.00, 1.80, Quadra 21, Mão Dupla
+Rua Álvaro Bezerra, Quadra 20, 2.00, 7.00, 2.00, Quadra 21, Mão Dupla
+Rua Maria Araújo, Quadra 14, 2.50, 7.00, 2.50, Quadra 20, Mão Dupla
+Rua Dom Manuel, Quadra 18, 2.00, 6.00, 2.00, Quadra 19, Mão Dupla
+Rua Cordeiro de Miranda, Quadra 17, 1.80, 6.00, 1.80, Quadra 18, Mão Dupla
+Rua Virgílio Távora, Quadra 16, 2.00, 7.00, 2.00, Quadra 17, Mão Dupla
+Rua Edmundo Rodrigues, Quadra 15, 1.80, 6.00, 1.80, Quadra 16, Mão Dupla
+Rua Ana Magalhães, Quadra 11, 2.00, 7.00, 2.00, Quadra 12, Mão Dupla
+Rua Tenente Edson, Quadra 7, 1.50, 5.50, 1.50, Quadra 8, Mão Dupla
+Rua Antonio Carlos Cavalcante, Quadra 4, 2.00, 6.50, 2.00, Quadra 7, Mão Dupla
+Rua Francisco Cordeiro, Quadra 2, 1.80, 6.00, 1.80, Quadra 3, Mão Dupla
+Rua Pedonal do Comércio, Quadra 10, 0.00, 8.00, 0.00, Quadra 11, Pedonal
+Rua do Parque (1 Calçada), Quadra 5, 0.00, 6.00, 2.50, Quadra 6, Mão Única

@@ -1,0 +1,5 @@
+<Project>
+  <Target Name="ValidateRhino" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(RhinoInstallDir)\System\RhinoCommon.dll')" Text="Rhino nao encontrado. Configure RhinoInstallDir em Directory.Build.local.props." />
+  </Target>
+</Project>
