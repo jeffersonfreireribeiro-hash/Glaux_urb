@@ -12,7 +12,7 @@ Nenhuma alteração funcional posterior ao marco 1.1.1 registrada.
 
 ### Verification
 
-- Builds Debug/Release e testes puros de perfil, lotes, seções e escritores GIS. Validação após reinstalação no Rhino/Grasshopper pendente.
+- Builds Debug/Release e testes puros de perfil, lotes, seções e escritores GIS. Após reinstalação, o mesmo documento abriu no Rhino/Grasshopper sem o breakpoint relatado (confirmado pelo usuário); outros fluxos interativos permanecem sem validação.
 
 ## 1.1.0 — 2026-10-01
 

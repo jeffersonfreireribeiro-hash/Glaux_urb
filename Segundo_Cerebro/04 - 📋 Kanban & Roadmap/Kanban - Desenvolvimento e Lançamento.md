@@ -142,7 +142,7 @@ Ver [[DevLog - 2026-09-26 - Calibracao GPU e BDPT Preservado]]. BDPT/NEE mantido
 - [x] Metadados de cada faixa persistidos no próprio parâmetro variável, migração dos chunks posicionais anteriores e warning `PROFILE_TYPE_MISMATCH` sem alteração silenciosa.
 - [x] [[Street Profile Fitting]] com fitting de mínimos, supressão explícita, IDs preservados, FitPts e integração textual com Road Cross Section.
 - [x] Corrigir breakpoint de `GetDataTree<GH_ObjectWrapper>` na entrada genérica `Sections` (patch 1.1.1; builds e testes isolados).
-- [ ] Reabrir o documento no Rhino/Grasshopper com 1.1.1 e confirmar ausência do breakpoint.
+- [x] Mesmo documento reaberto no Rhino/Grasshopper com 1.1.1 sem o breakpoint relatado (confirmado pelo usuário).
 - [x] Ícone específico de fitting e auditoria visual junto à família Glaux; builds Debug/Release e distribuição sincronizada.
 - [ ] No Rhino: testar `+`/`−`, menus, presets, reordenação, Undo/Redo, Save/Open `.gh`, Copy/Paste, fios e ícones.
 - [x] Width Domain `[mínimo,máximo]` por faixa, largura fixa, conflito de excedente e `PathIdx` separado de `SourceStreetID`.

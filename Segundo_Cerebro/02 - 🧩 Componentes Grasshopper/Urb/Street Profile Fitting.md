@@ -6,7 +6,7 @@ subcategory: "01 | Infraestrutura Viária"
 class: "Buraqueira_Urb.StreetProfileFitting_Component"
 file: "src/Urb/StreetProfileFitting_Component.cs"
 plugin: "Glaux_Urb"
-status: "Correção de leitura de Sections compilada; revalidação no Grasshopper pendente"
+status: "Correção compilada; abertura do mesmo documento no Grasshopper sem breakpoint confirmada"
 tags: [componente, grasshopper, glaux_urb, fitting, perfil_viario]
 ---
 
@@ -47,6 +47,8 @@ flowchart LR
   FIT -->|Adapted| RCS["[[Road Cross Section]]"]
 ```
 
-Quando `Sections` está conectado, o fitting usa o `StreetProfile` embutido em cada seção e confere QL/QR contra `Pts`; seção sem perfil recebe `UNMATCHED_SECTION_PROFILE`. Sem `Sections`, aceita lista de `ProfiledStreet`/`StreetProfile` e usa `SectionMeta` como ponte textual de compatibilidade. O índice do caminho (`PathIdx`) é seleção temporária, não identidade. Ícone 24×24 px exclusivo em `GlauxUrbIcons.StreetProfileFitting`. O 3D atual reconhece faixas viárias internas; subdivisão de Tree Strip e Furniture Strip externas nas superfícies longitudinais segue pendente. Testes puros 24/24; runtime Rhino/Grasshopper pendente.
+Quando `Sections` está conectado, o fitting usa o `StreetProfile` embutido em cada seção e confere QL/QR contra `Pts`; seção sem perfil recebe `UNMATCHED_SECTION_PROFILE`. Sem `Sections`, aceita lista de `ProfiledStreet`/`StreetProfile` e usa `SectionMeta` como ponte textual de compatibilidade. O índice do caminho (`PathIdx`) é seleção temporária, não identidade. Ícone 24×24 px exclusivo em `GlauxUrbIcons.StreetProfileFitting`. O 3D atual reconhece faixas viárias internas; subdivisão de Tree Strip e Furniture Strip externas nas superfícies longitudinais segue pendente. Testes puros 24/24; validação geométrica interativa no Rhino/Grasshopper pendente.
 
 Em 1º de outubro de 2026, a entrada genérica `Sections` passou a ser lida por `VolatileData` e ramos `IGH_Goo`. A conversão exigida por `GetDataTree<GH_ObjectWrapper>` causava breakpoint na abertura do Grasshopper quando a árvore conectada tinha o tipo genérico real. A correção preserva os caminhos `{rua;estaca}` e o perfil embutido.
+
+Após instalar 1.1.1, o usuário reabriu o mesmo documento e confirmou ausência desse breakpoint. Essa verificação cobre a abertura do documento; resultados geométricos e demais interações ainda exigem teste próprio.

@@ -10,4 +10,4 @@ GUID, entradas, saídas e paths do componente foram preservados. Não há altera
 
 ## Verificação
 
-Debug/Release e testes isolados passaram. A abertura do documento no Rhino/Grasshopper com o binário 1.1.1 ainda precisa ser revalidada.
+Debug/Release e testes isolados passaram. Após reinstalação do binário 1.1.1, o usuário confirmou que o mesmo documento abriu no Rhino/Grasshopper sem o breakpoint `GetDataTree()` relatado. Os demais fluxos interativos não foram revalidados nesta rodada.
