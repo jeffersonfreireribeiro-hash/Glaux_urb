@@ -261,6 +261,22 @@ namespace Buraqueira_Urb
                             }
                         }
 
+                        // Anexar atributos às curvas para permitir consulta direta por nome/metadados
+                        if (feat.Attributes != null && feat.Curves != null)
+                        {
+                            foreach (var crv in feat.Curves)
+                            {
+                                if (crv == null) continue;
+                                foreach (var kvp in feat.Attributes)
+                                {
+                                    if (kvp.Value != null)
+                                    {
+                                        crv.SetUserString(kvp.Key, kvp.Value.ToString());
+                                    }
+                                }
+                            }
+                        }
+
                         // Filtro opcional
                         if (string.IsNullOrWhiteSpace(filter) || MatchesFilter(feat, filter))
                         {

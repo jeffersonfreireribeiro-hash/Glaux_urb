@@ -55,8 +55,51 @@ try
     try { GpkgReader.ReadGeoPackage(gpkg,"nao_existe",out _); throw new Exception("FAIL: missing GPKG layer"); }
     catch (InvalidDataException) { checks++; }
     Console.WriteLine($"GIS import reader contracts: {checks}/{checks} PASS");
+
+    if (args.Length > 0 && args[0] == "--picui")
+    {
+        RunPicuiDiagnostic();
+    }
 }
 finally { Directory.Delete(directory, true); }
+
+void RunPicuiDiagnostic()
+{
+    string logPath = Environment.GetEnvironmentVariable("GLAUX_PICUI_LOGRADOUROS");
+    string quadPath = Environment.GetEnvironmentVariable("GLAUX_PICUI_QUADRAS");
+
+    Console.WriteLine("\n=== PICUI DIAGNOSTIC ===");
+    Console.WriteLine("Logradouros Path: " + logPath + " (Exists=" + File.Exists(logPath) + ")");
+    Console.WriteLine("Quadras Path: " + quadPath + " (Exists=" + File.Exists(quadPath) + ")");
+
+    if (File.Exists(logPath))
+    {
+        var feats = ShapefileReader.ReadShapefile(logPath, out var fields, out var info);
+        Console.WriteLine($"Logradouros: {feats.Count} features. Encoding info: {info}");
+        Console.WriteLine("Fields: " + string.Join(", ", fields));
+        for (int i = 0; i < feats.Count; i++)
+        {
+            var f = feats[i];
+            string nome = f.GetAttributeString("NOME") ?? "";
+            string tipo = f.GetAttributeString("TIPO") ?? "";
+            int crvCount = f.Curves?.Count ?? 0;
+            Console.WriteLine($"  [{i,2}] id={f.GetAttribute("id")} | {tipo,-10} | {nome,-30} | Crvs={crvCount}");
+        }
+    }
+
+    if (File.Exists(quadPath))
+    {
+        var qFeats = ShapefileReader.ReadShapefile(quadPath, out var qFields, out var qInfo);
+        Console.WriteLine($"\nQuadras: {qFeats.Count} features. Encoding info: {qInfo}");
+        Console.WriteLine("Fields: " + string.Join(", ", qFields));
+        for (int i = 0; i < Math.Min(10, qFeats.Count); i++)
+        {
+            var f = qFeats[i];
+            int crvCount = f.Curves?.Count ?? 0;
+            Console.WriteLine($"  [{i,2}] Quadra crvs={crvCount}");
+        }
+    }
+}
 
 void CheckShapefile(string shp, string source, string encoding)
 {

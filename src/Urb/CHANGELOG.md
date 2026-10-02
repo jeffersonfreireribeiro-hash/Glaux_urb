@@ -2,7 +2,22 @@
 
 ## Unreleased
 
-Nenhuma alteração funcional posterior ao marco 1.2.0 registrada.
+Validação interativa no Rhino e resolução topológica de interseções pendentes.
+
+## 1.2.1 — 2026-10-02
+
+### Fixed
+
+- Cópia da definição Picuí com ligações `Assignment.Profiled → Transversals.Axis` e `Transversals.Sections → Fitting.Sections`; a entrada `Pts` já estava correta.
+- `Street Profile Fitting` informa tipo e fonte de `Sections` incompatível e não associa perfis a ruas diferentes pela posição na lista.
+- `Road Transversals` não cria segmentos fictícios, fillets com raio arbitrário nem offsets fechados de quadras em `PlanCurbs`.
+- `Sidewalk Regularization` emite uma curva por sequência planejada válida e lado, e diagnostica quebras por estação ausente, duplicação ou mudança de orientação.
+- Perfis definidos separadamente com faixas de larguras iguais continuam distintos quando seus `ElementID` diferem.
+
+### Verification and limits
+
+- Builds Debug/Release sem erros/avisos; contratos GIS 63/63; perfil 32/32; seções 12/12; lotes 11/11; topologia de runs 6/6; suíte 42/42; escritores GPKG/SHP passaram. GH_IO confirmou as três ligações na cópia.
+- Execução no canvas Rhino/Grasshopper e comparação visual de meios-fios **não testadas**. Interseções, `RunID` persistido e fronteiras públicas fechadas seguem pendentes. Ver `docs/GLAUX_URB_PIPELINE_CURB_FIX_2026-10-02.md`.
 
 ## 1.2.0 — 2026-10-01
 

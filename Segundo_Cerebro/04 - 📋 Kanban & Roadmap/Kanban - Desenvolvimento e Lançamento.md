@@ -24,6 +24,10 @@ tags: [kanban, roadmap, buraqueira]
 - [ ] #13b SEM AMBIENTE: não há GPU AMD/Intel Arc disponível (resposta do usuário, 29/09); o Vulkan pode ser feito na NVIDIA, a validação AMD/Intel fica NÃO VALIDADA
 
 ## 🧪 Em Teste no Grasshopper
+- [x] Glaux BIM: pipeline de conversão corrigido com UserDictionary resiliente, schemas JSON por categoria e comando interativo de Face Override — [[DevLog - 2026-10-01 - Resolucao Conversao, Schemas JSON e Face Overrides Glaux BIM]].
+- [ ] Glaux BIM (P1): validar no Rhino save/reopen `.3dm`, BooleanDifference, Copy e Undo/Redo; implementar Undo transacional de níveis/relações. Isolamento por documento e snapshot versionado implementados — [[DevLog - 2026-10-01 - Auditoria e integridade inicial Glaux BIM]].
+- [ ] Glaux Acoustics (ALTA): testar no canvas material ausente (`Concreto` com α=0.10), três materiais, árvores separadas e save/reopen `.gh`; ver [[DevLog - 2026-10-01 - Auditoria física e materiais Glaux Acoustics]].
+- [ ] Glaux Acoustics (MÉDIA): definir contrato de ar/α ausente no Sabine e atualizar scripts que ainda usam caminhos pré-v1.21.0; ver relatório de auditoria de 01/10/2026.
 - [ ] Glaux Acoustics (ALTA) #36: validação com RIRs medidas — Organ Room e Refeitório dos Jerónimos feitos (A/B/C); falta decidir se entra um 3º espaço — `validation/real_world/`
 - [ ] Glaux Acoustics #39: Code Signing — ADIADA (SignPath exige repositório público; nada comprado nem contratado) — `docs/CODE_SIGNING.md`
 - [ ] Glaux Acoustics (MÉDIA) #27: revalidar o Auditório de Referência na composição híbrida v1.21 (ISM ordem 2 + traçado com `ismOrder` = 2)
@@ -154,3 +158,5 @@ Ver [[DevLog - 2026-09-26 - Calibracao GPU e BDPT Preservado]]. BDPT/NEE mantido
 - [x] Reauditoria 2026-10-01: conservar Street Profile Assignment existente, corrigir campo GIS ausente sem fallback arbitrário, IDs inválidos e fitting que lia só o primeiro segmento.
 - [x] Emitir `ProfiledSection` por seção aceita e consumi-la no fitting sem repetir o matching por nome.
 - [ ] Validar no Rhino o fluxo Profiled → Axis → Sections → ProfileFit e os IDs geométricos em SHP/GPKG reais.
+- [x] 2026-10-02: corrigir as ligações da definição Picuí em cópia, informar tipo/fonte reais no erro de `Sections`, impedir associação multivia por ordem, remover fillets/offsets/linhas fictícias de `PlanCurbs` e consolidar trechos por run/lado. Ver `docs/GLAUX_URB_PIPELINE_CURB_FIX_2026-10-02.md`.
+- [ ] 2026-10-02: executar a cópia corrigida no Rhino, validar visualmente meios-fios e lotes, persistir `RunID`/estaca física em `ProfiledSection` e resolver interseções antes de produzir fronteiras públicas fechadas.

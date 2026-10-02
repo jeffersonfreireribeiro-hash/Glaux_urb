@@ -27,6 +27,10 @@ Directory.Build.local.props
 !/validation/urb/test_adaptive_sections.ps1
 !/validation/urb/test_street_gis_writer.ps1
 !/validation/urb/test_street_shp_writer.ps1
+!/validation/urb/test_curb_run_topology.ps1
+!/validation/urb/CheckPicuiPipeline.ps1
+!/validation/urb/fixtures/
+!/validation/urb/fixtures/picui-pipeline-fixture.gh
 !/validation/urb/GisImportContractTests/
 !/validation/urb/GisImportContractTests/*.cs
 !/validation/urb/GisImportContractTests/*.csproj
@@ -64,3 +68,4 @@ Directory.Build.local.props
 *.log
 *.old
 *.previous-*
+/examples/*.gh

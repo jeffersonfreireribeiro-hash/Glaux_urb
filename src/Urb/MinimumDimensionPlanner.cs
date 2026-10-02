@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Buraqueira_Urb
@@ -7,9 +7,9 @@ namespace Buraqueira_Urb
     /// Shared one-dimensional minimum-width planner. Call once per continuous
     /// street side; callers split runs at rejected stations and junctions.
     /// </summary>
-    internal static class MinimumDimensionPlanner
+    public static class MinimumDimensionPlanner
     {
-        internal static double[] Plan(IReadOnlyList<double> existing, double minimum, double tolerance)
+        public static double[] Plan(IReadOnlyList<double> existing, double minimum, double tolerance)
         {
             if (existing == null) throw new ArgumentNullException(nameof(existing));
             if (minimum <= 0 || tolerance < 0) throw new ArgumentOutOfRangeException();

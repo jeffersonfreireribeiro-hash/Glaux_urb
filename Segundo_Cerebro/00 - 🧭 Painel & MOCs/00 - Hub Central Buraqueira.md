@@ -12,6 +12,8 @@ Bem-vindo ao centro de inteligência e desenvolvimento dos plugins **Buraqueira*
 ## 🧭 Mapas de Conteúdo (MOCs)
 Navegue pelas dimensões do projeto:
 
+* 🧪 **Auditoria Glaux Acoustics (01/10/2026):** [[DevLog - 2026-10-01 - Auditoria física e materiais Glaux Acoustics]]; relatório detalhado em `docs/GLAUX_ACOUSTICS_PHYSICS_MATERIAL_CONSISTENCY_AUDIT_2026-10-01.md`.
+
 * 🎛️ **[[01 - MOC - Componentes Grasshopper]]**: Catálogo vivo com fichas completas dos **135+ componentes**.
 * 📐 **[[02 - MOC - Acústica & Simulação]]**: Fórmulas, traçado de raios (GPU DXR/Vulkan), transição modal (ElmerFEM) e auralização.
 * 💻 **[[03 - MOC - Arquitetura C# & SDKs]]**: Guias de RhinoCommon, Grasshopper SDK, manipulação de DataTrees e ciclo de compilação.
@@ -29,6 +31,7 @@ Navegue pelas dimensões do projeto:
 | **Glaux Acoustics Classic** | Motor legado mantido e segregado em aba própria (Glaux_Acoustics_Classic.gha v2.0.1) | ✅ 0 Erros / 0 Warnings | [[Glaux Acoustics Classic]] |
 | **Glaux Tools v1.2.1** | Hub de dados, estatística, UI Pills, deduplicação de instâncias e visualização | ✅ 0 Erros / 0 Warnings (219/219 PASS) | [[Glaux Tools]] |
 | **Glaux Urb** | Seções viárias paramétricas, importação GIS (SHP, GPKG) | ✅ Operacional | [[Glaux Urb]] |
+| **Glaux BIM** | Semântica BIM sobre geometria Rhino; auditoria de persistência em andamento | ✅ Build Release/Debug; teste Rhino pendente | [[BIM Core Lifecycle]] |
 | **Glaux GDL** | Automação paramétrica e integração BIM ArchiCAD | ✅ 14 Testes Unitários | [[Glaux GDL]] |
 
 ---
@@ -129,3 +132,4 @@ Ver [[DevLog - 2026-09-28 - Resolucao Travamento Ray Tracing Grids Densos 0.5m]]
 - Em 2026-10-01, [[Street Profile Definition]] passou a persistir tipo, sentido e obrigatoriedade em cada input variável; `Street Type` global e `ElementType` individual ficaram explícitos. Composições contraditórias geram `PROFILE_TYPE_MISMATCH`.
 - [[Street Profile Definition]] agora emite `WidthDomain [mínimo,máximo]` por faixa; [[Street Profile Fitting]] limita o ajuste ao domínio e associa ruas por `SectionMeta.SourceStreetID` quando disponível. Ver `docs/GLAUX_URB_WIDTH_DOMAIN_STREET_IDENTITY_2026-10-01.md`.
 - A retomada de 02h50 reutilizou [[Street Profile Assignment]] existente e criou o contrato tipado `ProfiledSection` entre [[Road Transversals]] e [[Street Profile Fitting]]. Auditoria: `docs/GLAUX_URB_REAUDIT_2026-10-01.md`.
+- Em 2026-10-02, a definição real de Picuí revelou `Assignment.Profiled` ligado erroneamente a `Fitting.Sections`; a cópia corrigida e o diagnóstico de meios-fios estão em `docs/GLAUX_URB_PIPELINE_CURB_FIX_2026-10-02.md`. [[Sidewalk Regularization]] emite curvas contínuas por sequência aceita; esquinas e anéis públicos ainda exigem validação topológica no Rhino.

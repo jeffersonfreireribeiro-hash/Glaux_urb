@@ -335,7 +335,7 @@ namespace Buraqueira_Urb
             {
                 int end=start+1;
                 while(end<rows.Count && rows[end].Street==rows[end-1].Street &&
-                    rows[end].Station==rows[end-1].Station+1 && IsContinuous(rows[end-1],rows[end])) end++;
+                    IsContinuous(rows[end-1],rows[end])) end++;
                 int street=rows[start].Street;
                 int run=runByStreet.TryGetValue(street,out int previousRun)?previousRun:0;
                 runByStreet[street]=run+1; runs++;
@@ -386,6 +386,18 @@ namespace Buraqueira_Urb
                         }
                         existEdge.Append(new GH_Curve(new PolylineCurve(q)),edgePath);
                         curbEdge.Append(new GH_Curve(new PolylineCurve(c)),edgePath);
+                        var plannedQ = new List<Point3d>();
+                        var plannedCurb = new List<Point3d>();
+                        void FlushPlannedChain()
+                        {
+                            if (plannedCurb.Count >= 2)
+                            {
+                                planEdge.Append(new GH_Curve(new PolylineCurve(plannedQ)),edgePath);
+                                planCurbs.Append(new GH_Curve(new PolylineCurve(plannedCurb)),edgePath);
+                            }
+                            plannedQ.Clear();
+                            plannedCurb.Clear();
+                        }
                         for(int j=start+1;j<end;j++)
                         {
                             var a=rows[j-1]; var b=rows[j];
@@ -394,17 +406,27 @@ namespace Buraqueira_Urb
                             var ex=CreateStrip(ca,cb,qb,qa);
                             if(ex!=null){existSw.Append(new GH_Brep(ex),edgePath);legacyExisting.Add(ex);sidewalkCount++;}
                             else invalid++;
-                            if(!allowed[j-start-1] || !allowed[j-start])continue;
+                            if(!allowed[j-start-1] || !allowed[j-start])
+                            {
+                                FlushPlannedChain();
+                                continue;
+                            }
                             Point3d pa=side==0?a.PCL:a.PCR, pb=side==0?b.PCL:b.PCR;
-                            var pe=new LineCurve(qa,qb); planEdge.Append(new GH_Curve(pe),edgePath);
-                            legacyBoundary.Add(pe);
-                            planCurbs.Append(new GH_Curve(new LineCurve(pa,pb)),edgePath);
+                            if (plannedCurb.Count == 0)
+                            {
+                                plannedQ.Add(qa);
+                                plannedCurb.Add(pa);
+                            }
+                            plannedQ.Add(qb);
+                            plannedCurb.Add(pb);
+                            legacyBoundary.Add(new LineCurve(qa,qb));
                             var pl=CreateStrip(pa,pb,qb,qa);
                             if(pl!=null){planSw.Append(new GH_Brep(pl),edgePath);legacyPlanned.Add(pl);plannedCount++;}
                             else invalid++;
                             var area=CreateStrip(ca,cb,pb,pa);
                             if(area!=null)intervention.Add(area);
                         }
+                        FlushPlannedChain();
                     }
                     for(int j=start+1;j<end;j++)
                     {
@@ -419,6 +441,14 @@ namespace Buraqueira_Urb
                 else legacyConflicts.Add(rows[start].C);
                 int fitCount=allowed.Count(x=>x);
                 runStatus.Append(new GH_String($"Sections={end-start} | Fitted={fitCount} | RoadPatches={Math.Max(0,end-start-1)}"),runPath);
+                if (end < rows.Count && rows[end].Street == street)
+                {
+                    var a = rows[end-1]; var b = rows[end];
+                    string cause = CurbRunTopology.BreakReason(a.Station,b.Station,
+                        a.CR.X-a.CL.X,a.CR.Y-a.CL.Y,b.CR.X-b.CL.X,b.CR.Y-b.CL.Y);
+                    conflictReasons.Append(new GH_String(
+                        $"GAP | StreetPath={street} | Run={run} | PreviousSection={a.Station} | NextSection={b.Station} | Distance={a.C.DistanceTo(b.C):F3} | Classification={cause} | Expected=OPEN"),runPath);
+                }
                 start=end;
             }
             watch.Stop();
@@ -478,9 +508,10 @@ namespace Buraqueira_Urb
         private static bool IsContinuous(InputSection a, InputSection b)
         {
             var va = a.CR-a.CL; var vb = b.CR-b.CL;
-            if (!va.Unitize() || !vb.Unitize() || va*vb < 0.85) return false;
-            double span = Math.Max(a.CL.DistanceTo(a.CR), b.CL.DistanceTo(b.CR));
-            return a.C.DistanceTo(b.C) <= Math.Max(10.0, span*2.5);
+            // Station indices come from the same ordered source street. A fixed
+            // distance threshold fragmented legitimate 25 m sampling on narrow roads.
+            // Direction changes are still a topological break, never smoothed over.
+            return CurbRunTopology.BreakReason(a.Station,b.Station,va.X,va.Y,vb.X,vb.Y)==null;
         }
 
         private static Brep CreateStrip(Point3d a, Point3d b, Point3d c, Point3d d)

@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 
@@ -15,7 +16,7 @@ namespace Buraqueira_Urb
     /// Componente central para associar StreetProfile a feições reais de logradouros do GIS.
     /// Faz o match por nome (exato ou normalizado), suporta múltiplos segmentos por rua,
     /// identifica ruas sem perfil (UNMATCHED_STREET) e perfis concorrentes (AMBIGUOUS_PROFILE_MATCH).
-    /// Emite ProfiledStreet com StreetID estável, geometria de origem e o perfil acoplado.
+    /// Emite ProfiledStreet preservando a estrutura em DataTree, geometria de origem, atributos e StreetID.
     /// </summary>
     public sealed class StreetProfileAssignment_Component : GH_Component
     {
@@ -30,10 +31,10 @@ namespace Buraqueira_Urb
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            // 0: Logradouros (Eixos viários)
+            // 0: Logradouros (Eixos viários) - Suporte integral a DataTree
             p.AddGenericParameter("Logradouros (GIS)", "Streets",
-                "Eixos dos logradouros: caminho .shp/.gpkg, curvas do Rhino ou saída Features de Import Shapefile/GeoPackage. O nome é lido do atributo NameField, sem parsing de strings de painel.",
-                GH_ParamAccess.list);
+                "Eixos dos logradouros: árvore/lista de curvas, feições ShpFeature/GpkgFeature, caminhos .shp/.gpkg ou ProfiledStreet. Preserva a estrutura de árvore {feição}.",
+                GH_ParamAccess.tree);
 
             // 1: Street Profiles (Definições de perfil)
             p.AddGenericParameter("Street Profiles", "Profiles",
@@ -62,20 +63,20 @@ namespace Buraqueira_Urb
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
             p.AddGenericParameter("Profiled Streets", "Profiled",
-                "Lista de objetos ProfiledStreet contendo a via, geometria, identidade estável (StreetID) e o StreetProfile associado.",
-                GH_ParamAccess.list);
+                "Árvore de objetos ProfiledStreet contendo a via, geometria, identidade estável (StreetID) e o StreetProfile associado.",
+                GH_ParamAccess.tree);
 
             p.AddCurveParameter("Matched Curves", "Matched",
                 "Curvas dos eixos que receberam perfil viário com sucesso.",
-                GH_ParamAccess.list);
+                GH_ParamAccess.tree);
 
             p.AddCurveParameter("Unmatched Curves", "Unmatched",
                 "Curvas dos eixos que não encontraram nenhum perfil correspondente (UNMATCHED_STREET).",
-                GH_ParamAccess.list);
+                GH_ParamAccess.tree);
 
             p.AddCurveParameter("Ambiguous Curves", "Ambiguous",
                 "Curvas dos eixos onde múltiplos perfis competem pelo mesmo nome (AMBIGUOUS_PROFILE_MATCH).",
-                GH_ParamAccess.list);
+                GH_ParamAccess.tree);
 
             p.AddTextParameter("Assignment Report", "Report",
                 "Relatório técnico detalhado com diagnósticos de casamento, segmentos por via e conflitos.",
@@ -84,7 +85,7 @@ namespace Buraqueira_Urb
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
-            // Regra de Ouro: o gatilho Run é sempre o último parâmetro
+            // Regra de Ouro: o gatilho Run é sempre o último parâmetro (índice 4)
             bool run = true;
             da.GetData(4, ref run);
             if (!run)
@@ -93,8 +94,8 @@ namespace Buraqueira_Urb
                 return;
             }
 
-            var streetsInput = new List<object>();
-            da.GetDataList(0, streetsInput);
+            GH_Structure<IGH_Goo> streetsTree;
+            da.GetDataTree(0, out streetsTree);
 
             var profilesInput = new List<object>();
             da.GetDataList(1, profilesInput);
@@ -127,15 +128,36 @@ namespace Buraqueira_Urb
                 return;
             }
 
-            // 2. Extrair itens GIS de logradouros
+            // 2. Extrair itens GIS de logradouros inspecionando a árvore
+            int totalItems, branchCount, nullCount;
+            HashSet<string> receivedTypes;
             List<RawGisStreetItem> gisItems;
-            try { gisItems = ExtractRawGisItems(streetsInput, nameField); }
+            try
+            {
+                gisItems = ExtractRawGisItemsFromTree(streetsTree, nameField, out totalItems, out branchCount, out nullCount, out receivedTypes);
+            }
             catch (InvalidOperationException ex)
-            { AddRuntimeMessage(GH_RuntimeMessageLevel.Error, ex.Message); return; }
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, ex.Message);
+                return;
+            }
+
             if (gisItems.Count == 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Nenhum eixo de logradouro válido foi fornecido em Streets.");
-                Message = "Sem Logradouros";
+                if (totalItems == 0)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Street Profile Assignment: Streets está vazio (0 itens recebidos).");
+                    Message = "Sem Logradouros";
+                }
+                else
+                {
+                    string typesStr = receivedTypes.Count > 0 ? string.Join(", ", receivedTypes) : "Nenhum";
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                        $"Street Profile Assignment:\nStreets recebeu {totalItems} item(ns) em {branchCount} branch(es) ({nullCount} nulo(s)), mas nenhum pôde ser convertido para um eixo viário válido.\n\n" +
+                        $"Tipos recebidos:\n{typesStr}\n\n" +
+                        "Esperado:\nCurve / feição viária GIS válida (Curve, PolylineCurve, Line, ShpFeature, caminhos .shp/.gpkg).");
+                    Message = "Eixos Inválidos";
+                }
                 return;
             }
 
@@ -154,171 +176,372 @@ namespace Buraqueira_Urb
                     $"{result.UnmatchedCount} vias do GIS não possuem perfil associado (consulte Unmatched).");
             }
 
-            // 4. Alimentar as saídas
-            var wrappedProfiled = result.Profiled.Select(x => new GH_ObjectWrapper(x)).ToList();
-            da.SetDataList(0, wrappedProfiled);
-            da.SetDataList(1, result.MatchedCurves);
-            da.SetDataList(2, result.UnmatchedCurves);
-            da.SetDataList(3, result.AmbiguousCurves);
+            // 4. Alimentar as saídas preservando os caminhos da DataTree
+            var profiledTree = new GH_Structure<GH_ObjectWrapper>();
+            var matchedTree = new GH_Structure<GH_Curve>();
+            var unmatchedTree = new GH_Structure<GH_Curve>();
+            var ambiguousTree = new GH_Structure<GH_Curve>();
+
+            GH_Path ParsePath(string pathStr, int fallbackIndex = 0)
+            {
+                if (!string.IsNullOrEmpty(pathStr))
+                {
+                    try
+                    {
+                        string clean = pathStr.Trim('{', '}').Trim();
+                        if (!string.IsNullOrEmpty(clean))
+                        {
+                            var parts = clean.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                            var indices = parts.Select(int.Parse).ToArray();
+                            if (indices.Length > 0) return new GH_Path(indices);
+                        }
+                    }
+                    catch { }
+                }
+                return new GH_Path(fallbackIndex);
+            }
+
+            foreach (var profiled in result.Profiled)
+            {
+                var p = ParsePath(profiled.TreePath);
+                profiledTree.Append(new GH_ObjectWrapper(profiled), p);
+                if (profiled.SourceGeometry != null && profiled.SourceGeometry.IsValid)
+                    matchedTree.Append(new GH_Curve(profiled.SourceGeometry), p);
+            }
+
+            foreach (var unmatched in result.UnmatchedItems)
+            {
+                var p = ParsePath(unmatched.TreePath);
+                if (unmatched.Geometry != null && unmatched.Geometry.IsValid)
+                    unmatchedTree.Append(new GH_Curve(unmatched.Geometry), p);
+            }
+
+            foreach (var ambiguous in result.AmbiguousItems)
+            {
+                var p = ParsePath(ambiguous.TreePath);
+                if (ambiguous.Geometry != null && ambiguous.Geometry.IsValid)
+                    ambiguousTree.Append(new GH_Curve(ambiguous.Geometry), p);
+            }
+
+            da.SetDataTree(0, profiledTree);
+            da.SetDataTree(1, matchedTree);
+            da.SetDataTree(2, unmatchedTree);
+            da.SetDataTree(3, ambiguousTree);
             da.SetData(4, result.Report);
 
             Message = $"{result.MatchedCount}/{result.TotalFeatures} casadas";
         }
 
-        private static List<RawGisStreetItem> ExtractRawGisItems(List<object> inputList, string nameField)
+        public static bool TryExtractCurve(object obj, out Curve curve)
+        {
+            curve = null;
+            if (obj == null) return false;
+
+            while (obj is GH_ObjectWrapper wrapper)
+            {
+                obj = wrapper.Value;
+                if (obj == null) return false;
+            }
+
+            if (obj is GH_Curve ghCrv)
+            {
+                curve = ghCrv.Value;
+                return curve != null && curve.IsValid;
+            }
+            if (obj is Curve crv)
+            {
+                curve = crv;
+                return curve.IsValid;
+            }
+            if (obj is GH_Line ghLine)
+            {
+                curve = new LineCurve(ghLine.Value);
+                return curve.IsValid;
+            }
+            if (obj is Line line)
+            {
+                curve = new LineCurve(line);
+                return curve.IsValid;
+            }
+            if (obj is Polyline pl)
+            {
+                curve = new PolylineCurve(pl);
+                return curve.IsValid;
+            }
+            if (obj is PolyCurve polyCurve)
+            {
+                curve = polyCurve;
+                return curve.IsValid;
+            }
+            if (obj is IGH_GeometricGoo geoGoo)
+            {
+                var geom = geoGoo.ScriptVariable();
+                if (geom is Curve c) { curve = c; return curve.IsValid; }
+                if (geom is Line l) { curve = new LineCurve(l); return curve.IsValid; }
+                if (geom is Polyline p) { curve = new PolylineCurve(p); return curve.IsValid; }
+            }
+            return false;
+        }
+
+        private static Dictionary<string, object> ExtractAttributesFromCurve(Curve curve)
+        {
+            var attrs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (curve == null) return attrs;
+
+            try
+            {
+                if (curve.UserDictionary != null && curve.UserDictionary.Count > 0)
+                {
+                    foreach (var key in curve.UserDictionary.Keys)
+                    {
+                        attrs[key] = curve.UserDictionary[key];
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                var userStrings = curve.GetUserStrings();
+                if (userStrings != null && userStrings.Count > 0)
+                {
+                    for (int i = 0; i < userStrings.Count; i++)
+                    {
+                        string key = userStrings.GetKey(i);
+                        string val = userStrings.Get(i);
+                        if (!string.IsNullOrEmpty(key) && !attrs.ContainsKey(key))
+                        {
+                            attrs[key] = val;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return attrs;
+        }
+
+        private static string ResolveStreetName(Dictionary<string, object> attrs, string userPreference, Curve curve)
+        {
+            if (attrs != null && attrs.Count > 0)
+            {
+                string chosenField = TryFindStreetNameField(attrs.Keys.ToList(), userPreference);
+                if (!string.IsNullOrEmpty(chosenField) && attrs.TryGetValue(chosenField, out var val))
+                {
+                    string sVal = val?.ToString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(sVal)) return sVal;
+                }
+            }
+
+            if (curve != null)
+            {
+                string name = curve.GetUserString("Name") ??
+                              curve.GetUserString("NOME") ??
+                              curve.GetUserString("RUA") ??
+                              curve.GetUserString("LOGRADOURO");
+                if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+            }
+
+            return "";
+        }
+
+        private static List<RawGisStreetItem> ExtractRawGisItemsFromTree(
+            GH_Structure<IGH_Goo> tree,
+            string nameField,
+            out int totalItems,
+            out int branchCount,
+            out int nullCount,
+            out HashSet<string> receivedTypes)
         {
             var result = new List<RawGisStreetItem>();
-            if (inputList == null) return result;
+            receivedTypes = new HashSet<string>();
+            totalItems = 0;
+            branchCount = 0;
+            nullCount = 0;
 
-            for (int itemIdx = 0; itemIdx < inputList.Count; itemIdx++)
+            if (tree == null) return result;
+
+            branchCount = tree.PathCount;
+            totalItems = tree.DataCount;
+
+            foreach (var path in tree.Paths)
             {
-                var item = inputList[itemIdx];
-                if (item == null) continue;
+                var branch = tree[path];
+                if (branch == null) continue;
 
-                object unwrapped = item;
-                while (unwrapped is GH_ObjectWrapper wrapper) unwrapped = wrapper.Value;
+                string pathStr = path.ToString();
 
-                // Import SHP/GPKG exposes a common feature object. Resolve names
-                // from its typed attribute map, never by parsing panel strings.
-                if (unwrapped is ShpFeature imported)
+                for (int i = 0; i < branch.Count; i++)
                 {
-                    string chosenField = FindStreetNameField(imported.Attributes?.Keys.ToList() ?? new List<string>(), nameField);
-                    string streetName = chosenField == null ? "" : imported.GetAttributeString(chosenField);
-                    if (imported.Curves != null)
-                        foreach (var curve in imported.Curves)
-                            if (curve != null && curve.IsValid)
-                                result.Add(new RawGisStreetItem
-                                {
-                                    Geometry = curve,
-                                    Name = streetName,
-                                    SourceId = FeatureId(Path.GetFileName(imported.SourcePath ?? "import"), imported.Attributes, curve, streetName),
-                                    FeatureIndex = imported.RecordNumber,
-                                    Attributes = imported.Attributes
-                                });
-                    continue;
-                }
-
-                // Caso A: Se já é ProfiledStreet
-                if (unwrapped is ProfiledStreet ps)
-                {
-                    result.Add(new RawGisStreetItem
+                    var goo = branch[i];
+                    if (goo == null)
                     {
-                        Geometry = ps.SourceGeometry,
-                        Name = ps.StreetName,
-                        SourceId = ps.StreetID,
-                        FeatureIndex = ps.FeatureIndex,
-                        Attributes = ps.Attributes
-                    });
-                    continue;
-                }
+                        nullCount++;
+                        continue;
+                    }
 
-                // Caso B: Se é caminho para arquivo Shapefile (.shp)
-                if (unwrapped is string pathStr && File.Exists(pathStr) && pathStr.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
-                {
-                    var feats = ShapefileReader.ReadShapefile(pathStr, out var fieldNames);
-                    string chosenField = FindStreetNameField(fieldNames, nameField);
+                    receivedTypes.Add(goo.GetType().Name);
 
-                    foreach (var f in feats)
+                    object unwrapped = goo;
+                    while (unwrapped is GH_ObjectWrapper wrapper)
                     {
-                        string sName = "";
-                        if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
-                        {
-                            sName = val?.ToString()?.Trim();
-                        }
-                        // A missing cadastral name must remain unmatched, not acquire
-                        // an invented Rua_N value that could match a real profile.
+                        unwrapped = wrapper.Value;
+                        if (unwrapped != null) receivedTypes.Add(unwrapped.GetType().Name);
+                    }
 
-                        if (f.Curves != null)
+                    if (unwrapped == null)
+                    {
+                        nullCount++;
+                        continue;
+                    }
+
+                    // Caso A: ShpFeature (vindo de Features de ShpImport / GpkgImport)
+                    if (unwrapped is ShpFeature imported)
+                    {
+                        var attrs = imported.Attributes ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                        string chosenField = TryFindStreetNameField(attrs.Keys.ToList(), nameField);
+                        string streetName = (!string.IsNullOrEmpty(chosenField) && attrs.TryGetValue(chosenField, out var sv))
+                            ? sv?.ToString()?.Trim() ?? "" : "";
+
+                        if (imported.Curves != null)
                         {
-                            for (int cIdx = 0; cIdx < f.Curves.Count; cIdx++)
+                            foreach (var c in imported.Curves)
                             {
-                                var c = f.Curves[cIdx];
                                 if (c != null && c.IsValid)
                                 {
-                                    string segmentId = FeatureId(Path.GetFileName(pathStr),f.Attributes,c,sName);
                                     result.Add(new RawGisStreetItem
                                     {
                                         Geometry = c,
-                                        Name = sName,
-                                        SourceId = segmentId,
-                                        FeatureIndex = f.RecordNumber,
-                                        Attributes = f.Attributes
+                                        Name = streetName,
+                                        SourceId = FeatureId(Path.GetFileName(imported.SourcePath ?? "import"), attrs, c, streetName),
+                                        FeatureIndex = imported.RecordNumber,
+                                        Attributes = attrs,
+                                        TreePath = pathStr
                                     });
                                 }
                             }
                         }
+                        continue;
                     }
-                    continue;
-                }
 
-                // Caso C: Se é caminho para arquivo GeoPackage (.gpkg)
-                if (unwrapped is string gpkgPath && File.Exists(gpkgPath) && gpkgPath.EndsWith(".gpkg", StringComparison.OrdinalIgnoreCase))
-                {
-                    var feats = GpkgReader.ReadGeoPackage(gpkgPath, null, out var fieldNames);
-                    string chosenField = FindStreetNameField(fieldNames, nameField);
-
-                    foreach (var f in feats)
+                    // Caso B: ProfiledStreet
+                    if (unwrapped is ProfiledStreet ps)
                     {
-                        string sName = "";
-                        if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
+                        result.Add(new RawGisStreetItem
                         {
-                            sName = val?.ToString()?.Trim();
-                        }
-                        // Preserve unnamed features for UNMATCHED_STREET diagnostics.
+                            Geometry = ps.SourceGeometry,
+                            Name = ps.StreetName,
+                            SourceId = ps.StreetID,
+                            FeatureIndex = ps.FeatureIndex,
+                            Attributes = ps.Attributes,
+                            TreePath = !string.IsNullOrEmpty(ps.TreePath) ? ps.TreePath : pathStr
+                        });
+                        continue;
+                    }
 
-                        if (f.Curves != null)
+                    // Caso C: Caminho de arquivo GIS (.shp ou .gpkg) via GisPathResolver
+                    if (GisPathResolver.TryResolveGisPath(unwrapped, out string resolvedPath, out string rawPath))
+                    {
+                        if (resolvedPath.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
                         {
-                            for (int cIdx = 0; cIdx < f.Curves.Count; cIdx++)
+                            var feats = ShapefileReader.ReadShapefile(resolvedPath, out var fieldNames);
+                            string chosenField = TryFindStreetNameField(fieldNames, nameField);
+
+                            foreach (var f in feats)
                             {
-                                var c = f.Curves[cIdx];
-                                if (c != null && c.IsValid)
+                                string sName = "";
+                                if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
                                 {
-                                    string segmentId = FeatureId(Path.GetFileName(gpkgPath),f.Attributes,c,sName);
-                                    result.Add(new RawGisStreetItem
+                                    sName = val?.ToString()?.Trim() ?? "";
+                                }
+
+                                if (f.Curves != null)
+                                {
+                                    foreach (var c in f.Curves)
                                     {
-                                        Geometry = c,
-                                        Name = sName,
-                                        SourceId = segmentId,
-                                        FeatureIndex = f.RecordNumber,
-                                        Attributes = f.Attributes
-                                    });
+                                        if (c != null && c.IsValid)
+                                        {
+                                            result.Add(new RawGisStreetItem
+                                            {
+                                                Geometry = c,
+                                                Name = sName,
+                                                SourceId = FeatureId(Path.GetFileName(resolvedPath), f.Attributes, c, sName),
+                                                FeatureIndex = f.RecordNumber,
+                                                Attributes = f.Attributes,
+                                                TreePath = pathStr
+                                            });
+                                        }
+                                    }
                                 }
                             }
+                            continue;
+                        }
+                        else if (resolvedPath.EndsWith(".gpkg", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var feats = GpkgReader.ReadGeoPackage(resolvedPath, null, out var fieldNames);
+                            string chosenField = TryFindStreetNameField(fieldNames, nameField);
+
+                            foreach (var f in feats)
+                            {
+                                string sName = "";
+                                if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
+                                {
+                                    sName = val?.ToString()?.Trim() ?? "";
+                                }
+
+                                if (f.Curves != null)
+                                {
+                                    foreach (var c in f.Curves)
+                                    {
+                                        if (c != null && c.IsValid)
+                                        {
+                                            result.Add(new RawGisStreetItem
+                                            {
+                                                Geometry = c,
+                                                Name = sName,
+                                                SourceId = FeatureId(Path.GetFileName(resolvedPath), f.Attributes, c, sName),
+                                                FeatureIndex = f.RecordNumber,
+                                                Attributes = f.Attributes,
+                                                TreePath = pathStr
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            continue;
                         }
                     }
-                    continue;
-                }
-
-                // Caso D: Curva direta do Rhino/Grasshopper
-                Curve directCrv = null;
-                if (unwrapped is GH_Curve ghCrv) directCrv = ghCrv.Value;
-                else if (unwrapped is Curve crv) directCrv = crv;
-
-                if (directCrv != null && directCrv.IsValid)
-                {
-                    string name = directCrv.GetUserString("Name") ??
-                                  directCrv.GetUserString("NOME") ??
-                                  directCrv.GetUserString("RUA") ??
-                                  directCrv.GetUserString("LOGRADOURO");
-                    // A direct curve without a name remains unmatched.
-
-                    result.Add(new RawGisStreetItem
+                    else if (!string.IsNullOrEmpty(rawPath) && GisPathResolver.IsGisExtension(rawPath))
                     {
-                        Geometry = directCrv,
-                        Name = name,
-                        SourceId = FeatureId("GH",null,directCrv,name),
-                        FeatureIndex = result.Count + 1
-                    });
+                        throw new InvalidOperationException($"O arquivo GIS especificado em Streets não foi encontrado no disco: '{rawPath}'. Verifique se o caminho existe e se o drive está montado.");
+                    }
+
+                    // Caso E: Curva direta com ou sem UserStrings / atributos
+                    if (TryExtractCurve(unwrapped, out Curve directCrv))
+                    {
+                        var attrs = ExtractAttributesFromCurve(directCrv);
+                        string sName = ResolveStreetName(attrs, nameField, directCrv);
+
+                        result.Add(new RawGisStreetItem
+                        {
+                            Geometry = directCrv,
+                            Name = sName,
+                            SourceId = FeatureId("GH", attrs, directCrv, sName),
+                            FeatureIndex = result.Count + 1,
+                            Attributes = attrs,
+                            TreePath = pathStr
+                        });
+                        continue;
+                    }
                 }
             }
 
             return result;
         }
 
-        private static string FindStreetNameField(List<string> fieldNames, string userPreference)
+        private static string TryFindStreetNameField(List<string> fieldNames, string userPreference)
         {
-            if (fieldNames == null || fieldNames.Count == 0)
-                throw new InvalidOperationException("O GIS não contém colunas de atributos para localizar o nome do logradouro.");
+            if (fieldNames == null || fieldNames.Count == 0) return null;
 
             if (!string.IsNullOrWhiteSpace(userPreference))
             {
@@ -326,7 +549,7 @@ namespace Buraqueira_Urb
                 {
                     if (f.Equals(userPreference, StringComparison.OrdinalIgnoreCase)) return f;
                 }
-                throw new InvalidOperationException("Street Name Field '"+userPreference+"' não existe no GIS. Colunas: "+string.Join(", ",fieldNames));
+                throw new InvalidOperationException("Street Name Field '" + userPreference + "' não existe no GIS. Colunas disponíveis: " + string.Join(", ", fieldNames));
             }
 
             string[] commonNames = { "NOME_LOG", "NOME", "LOGRADOURO", "RUA", "NM_LOG", "DS_NOME", "NM_TITULO", "STREET", "NAME" };
@@ -341,45 +564,50 @@ namespace Buraqueira_Urb
                 }
             }
 
-            throw new InvalidOperationException("Nenhuma coluna de nome de logradouro reconhecida. Informe Street Name Field explicitamente.");
+            return null;
         }
 
-        private static string FeatureId(string fileName,Dictionary<string,object> attributes,
-            Curve curve,string streetName)
+        private static string FeatureId(string fileName, Dictionary<string, object> attributes,
+            Curve curve, string streetName)
         {
-            string id=null;
-            if(attributes!=null)
-                foreach(string key in new[]{"STREET_ID","ID_LOGRADOURO","ID_LOG","COD_LOG","ID","FID"})
+            string id = null;
+            if (attributes != null)
+            {
+                foreach (string key in new[] { "STREET_ID", "ID_LOGRADOURO", "ID_LOG", "COD_LOG", "ID", "FID" })
                 {
-                    var field=attributes.Keys.FirstOrDefault(x=>string.Equals(x,key,StringComparison.OrdinalIgnoreCase));
-                    if(field==null)continue;
-                    id=Convert.ToString(attributes[field],System.Globalization.CultureInfo.InvariantCulture)?.Trim();
-                    if(!string.IsNullOrWhiteSpace(id) && id.Any(ch=>ch!='*'))break;
-                    id=null;
+                    var field = attributes.Keys.FirstOrDefault(x => string.Equals(x, key, StringComparison.OrdinalIgnoreCase));
+                    if (field == null) continue;
+                    id = Convert.ToString(attributes[field], CultureInfo.InvariantCulture)?.Trim();
+                    if (!string.IsNullOrWhiteSpace(id) && id.Any(ch => ch != '*')) break;
+                    id = null;
                 }
-            if(!string.IsNullOrWhiteSpace(id))return fileName+":id:"+id;
-            // Stable under feature-list reorder. Geometry edits intentionally produce
-            // a new identity when no durable cadastral attribute exists.
+            }
+            if (!string.IsNullOrWhiteSpace(id)) return fileName + ":id:" + id;
+
+            // Identificador estável via hash de geometria e nome
             string Forward(bool reverse)
             {
-                var sb=new StringBuilder(512);
+                var sb = new StringBuilder(512);
                 sb.Append(StreetNameNormalizer.Normalize(streetName)).Append('|');
-                for(int i=0;i<=16;i++)
+                for (int i = 0; i <= 16; i++)
                 {
-                    double t=(reverse?16-i:i)/16.0;
-                    var pt=curve.PointAtNormalizedLength(t);
-                    sb.Append(Math.Round(pt.X,4).ToString("F4",CultureInfo.InvariantCulture)).Append(',')
-                      .Append(Math.Round(pt.Y,4).ToString("F4",CultureInfo.InvariantCulture)).Append(',')
-                      .Append(Math.Round(pt.Z,4).ToString("F4",CultureInfo.InvariantCulture)).Append(';');
+                    double t = (reverse ? 16 - i : i) / 16.0;
+                    var pt = curve.PointAtNormalizedLength(t);
+                    sb.Append(Math.Round(pt.X, 4).ToString("F4", CultureInfo.InvariantCulture)).Append(',')
+                      .Append(Math.Round(pt.Y, 4).ToString("F4", CultureInfo.InvariantCulture)).Append(',')
+                      .Append(Math.Round(pt.Z, 4).ToString("F4", CultureInfo.InvariantCulture)).Append(';');
                 }
-                sb.Append(curve.GetLength().ToString("F4",CultureInfo.InvariantCulture));
+                sb.Append(curve.GetLength().ToString("F4", CultureInfo.InvariantCulture));
                 return sb.ToString();
             }
-            string a=Forward(false),b=Forward(true);
+
+            string a = Forward(false), b = Forward(true);
             byte[] hash;
-            using(var sha=SHA256.Create())hash=sha.ComputeHash(Encoding.UTF8.GetBytes(
-                string.CompareOrdinal(a,b)<=0?a:b));
-            return fileName+":geom:"+BitConverter.ToString(hash).Replace("-","").Substring(0,24);
+            using (var sha = SHA256.Create())
+            {
+                hash = sha.ComputeHash(Encoding.UTF8.GetBytes(string.CompareOrdinal(a, b) <= 0 ? a : b));
+            }
+            return fileName + ":geom:" + BitConverter.ToString(hash).Replace("-", "").Substring(0, 24);
         }
     }
 }

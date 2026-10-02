@@ -64,8 +64,14 @@ namespace Buraqueira_Urb
             bool hasTyped=typedByPath.Count>0;
             if (Params.Input[6].SourceCount > 0 && !hasTyped)
             {
+                var receivedTypes = typedSections == null ? "vazio" : string.Join(", ",
+                    typedSections.AllData(true).Select(Unwrap).Where(x => x != null)
+                        .Select(x => x.GetType().Name).Distinct().Take(4));
+                if (string.IsNullOrEmpty(receivedTypes)) receivedTypes = "vazio";
+                var source = Params.Input[6].Sources.FirstOrDefault();
+                var sourceName = source == null ? "desconhecida" : source.Name + " (" + source.NickName + ")";
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                    "Street Profile Fitting: Sections está conectado, mas não contém ProfiledSection. Ligue Road Transversals.Sections e alimente Axis com ProfileAssign.Profiled.");
+                    $"Sections recebeu {receivedTypes} de {sourceName}; esperado ProfiledSection. Conecte Road Transversals.Sections (não Assignment.Profiled). Road Transversals.Axis deve receber Assignment.Profiled.");
                 return;
             }
             profiles.AddRange(typedByPath.Values.Where(x=>x.StreetProfile!=null)
@@ -79,7 +85,7 @@ namespace Buraqueira_Urb
                 return;
             }
             int streetIndex = -1; da.GetData(3, ref streetIndex);
-            var ids = sections.Paths.Where(x => x.Indices.Length >= 2).Select(x => x.Indices[0]).Distinct().ToList();
+            var ids = sections.Paths.Select(GetStreetId).Distinct().ToList();
             GH_Structure<GH_String> metadata; da.GetDataTree(5, out metadata);
             bool hasMetadata = metadata != null && metadata.DataCount > 0;
             var profilesByPath = new Dictionary<int,StreetProfile>();
@@ -118,13 +124,13 @@ namespace Buraqueira_Urb
                     }
                 }
             }
-            if (streetIndex >= 0 && !hasMetadata && !hasTyped && profiles.Count==1 && ids.Contains(streetIndex))
+            if (streetIndex >= 0 && !hasMetadata && !hasTyped && profiles.Count == 1 && ids.Contains(streetIndex))
             {
-                profilesByPath[streetIndex]=profiles[0];
+                profilesByPath[streetIndex] = profiles[0];
             }
-            else if (!hasMetadata && !hasTyped && streetIndex < 0 && ids.Count==1 && profiles.Count==1)
+            else if (!hasMetadata && !hasTyped && streetIndex < 0 && profiles.Count == 1 && ids.Count == 1)
             {
-                profilesByPath[ids[0]]=profiles[0];
+                foreach (var id in ids) profilesByPath[id] = profiles[0];
             }
             if (streetIndex>=0 && hasMetadata && !hasTyped &&
                 (!profilesByPath.ContainsKey(streetIndex) || ambiguousPaths.Contains(streetIndex)))
@@ -144,20 +150,25 @@ namespace Buraqueira_Urb
             for (int i = 0; i < sections.PathCount; i++)
             {
                 var path = sections.Paths[i];
-                if (path.Indices.Length < 2) continue;
-                if (streetIndex>=0 && path.Indices[0]!=streetIndex) continue;
+                int sId = GetStreetId(path);
+                int stId = GetStationId(path);
+                if (streetIndex >= 0 && sId != streetIndex) continue;
                 StreetProfile profile;
-                ProfiledSection typedSection=null;
-                if(hasTyped)
+                ProfiledSection typedSection = null;
+                if (hasTyped)
                 {
-                    if(!typedByPath.TryGetValue(path.ToString(),out typedSection) || typedSection.StreetProfile==null)
-                    {Conflict("UNMATCHED_SECTION_PROFILE");continue;}
-                    profile=typedSection.StreetProfile;
+                    if (!typedByPath.TryGetValue(path.ToString(), out typedSection) || typedSection.StreetProfile == null)
+                    {
+                        string altKey = $"{{{sId};{stId}}}";
+                        if (!typedByPath.TryGetValue(altKey, out typedSection) || typedSection.StreetProfile == null)
+                        { Conflict("UNMATCHED_SECTION_PROFILE"); continue; }
+                    }
+                    profile = typedSection.StreetProfile;
                 }
                 else
                 {
-                    if (ambiguousPaths.Contains(path.Indices[0])) { Conflict("AMBIGUOUS_PROFILE_MATCH"); continue; }
-                    if (!profilesByPath.TryGetValue(path.Indices[0],out profile))
+                    if (ambiguousPaths.Contains(sId)) { Conflict("AMBIGUOUS_PROFILE_MATCH"); continue; }
+                    if (!profilesByPath.TryGetValue(sId, out profile))
                     { Conflict("UNMATCHED_STREET"); continue; }
                 }
                 var pts = sections.Branches[i];
@@ -188,15 +199,15 @@ namespace Buraqueira_Urb
                 void Conflict(string reason)
                 { conflicts.Append(new GH_String("PROFILE_CONFLICT | Reason=" + reason), path); rejected++; }
             }
-            good.Sort((a,b) => a.Path.Indices[0] != b.Path.Indices[0]
-                ? a.Path.Indices[0].CompareTo(b.Path.Indices[0])
-                : a.Path.Indices[1].CompareTo(b.Path.Indices[1]));
+            good.Sort((a,b) => GetStreetId(a.Path) != GetStreetId(b.Path)
+                ? GetStreetId(a.Path).CompareTo(GetStreetId(b.Path))
+                : GetStationId(a.Path).CompareTo(GetStationId(b.Path)));
             var invalid = new HashSet<string>();
             for (int i = 1; i < good.Count; i++)
             {
                 var a = good[i-1]; var b = good[i];
-                if (a.Path.Indices[0] != b.Path.Indices[0] ||
-                    b.Path.Indices[1] != a.Path.Indices[1]+1) continue;
+                if (GetStreetId(a.Path) != GetStreetId(b.Path) ||
+                    GetStationId(b.Path) != GetStationId(a.Path) + 1) continue;
                 double l = MinimumDistance(a.QL,b.QL,a.CL,b.CL);
                 double r = MinimumDistance(a.CR,b.CR,a.QR,b.QR);
                 double minL = ExteriorMinimum(a.Fit.Profile.Elements, true);
@@ -244,6 +255,8 @@ namespace Buraqueira_Urb
 
         private sealed class Section
         { public GH_Path Path; public Point3d QL,CL,C,CR,QR; public StreetProfileFitResult Fit; }
+        private static int GetStreetId(GH_Path p) => p.Indices.Length >= 2 ? p.Indices[0] : (p.Indices.Length == 1 ? p.Indices[0] : 0);
+        private static int GetStationId(GH_Path p) => p.Indices.Length >= 2 ? p.Indices[1] : 0;
         private static object Unwrap(IGH_Goo goo)
         {object value=goo;while(value is GH_ObjectWrapper wrapper)value=wrapper.Value;return value;}
         private static string Field(string text, string key)

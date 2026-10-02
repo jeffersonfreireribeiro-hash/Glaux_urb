@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -111,7 +112,7 @@ namespace Buraqueira_Urb
             pManager.AddCurveParameter("Existing Block Boundary", "ExistBnd", "Limites reais de quadra/lote, sem alteração.", GH_ParamAccess.list);
             pManager.AddCurveParameter("Fixed Street Boundary", "Curbs", "Limites viários originais, sem alteração.", GH_ParamAccess.list);
             pManager.AddPointParameter("Planned Section Points", "PlanPts", "Cinco pontos por {rua;estaca}; quadras fixas e meios-fios propostos dentro da faixa pública.", GH_ParamAccess.tree);
-            pManager.AddCurveParameter("Planned Curb Boundary", "PlanCurbs", "Meios-fios propostos por trechos válidos; limites de lotes permanecem fixos.", GH_ParamAccess.list);
+            pManager.AddCurveParameter("Planned Curb Boundary", "PlanCurbs", "Prévia aberta por sequências válidas; use Sidewalk Regularization com Blocks e FitPts para validar lotes. Não fecha esquinas.", GH_ParamAccess.list);
             pManager.AddTextParameter("Section Metadata", "SectionMeta", "Tipo, motivo, obrigatoriedade, lado, fonte e vértice de cada seção candidata; mesmo caminho {rua;estaca}.", GH_ParamAccess.tree);
             pManager.AddGenericParameter("Profiled Sections", "Sections", "Seções aceitas com StreetID, StreetName, perfil associado e cinco pontos; mesmo caminho de Pts.", GH_ParamAccess.tree);
         }
@@ -362,16 +363,29 @@ namespace Buraqueira_Urb
                         continue;
                     }
 
-                    // O corte válido continua sendo a geometria EXISTING. Sem os dois
-                    // meios-fios não se inventam larguras de calçada.
+                    // O corte válido continua sendo a geometria dentro da faixa pública.
                     var path = new GH_Path(sIdx, stIdx);
                     outLinesTree.Append(new GH_Curve(corridorCrv), path);
                     validTransversalCount++;
                     if (!ptCurbLeft.HasValue || !ptCurbRight.HasValue)
                     {
-                        planningConflictsTree.Append(new GH_String("MISSING_STREET_BOUNDARY"), path);
-                        missingGeometryCount++;
-                        continue;
+                        if (mode == 0) // Existing Mode: requer meio-fio real medido
+                        {
+                            planningConflictsTree.Append(new GH_String("MISSING_STREET_BOUNDARY"), path);
+                            missingGeometryCount++;
+                            continue;
+                        }
+                        else // Planning Mode: projeta calçada padrão a partir do domínio público entre quadras
+                        {
+                            double wPublic = qL.DistanceTo(qR);
+                            double maxSw = Math.Max(0.5, (wPublic - Math.Max(minRoad, 2.0)) * 0.5);
+                            double defSwL = Math.Min(stdSw, maxSw);
+                            double defSwR = defSwL;
+
+                            var acrossCorridor = qR - qL;
+                            ptCurbLeft = qL + acrossCorridor * (defSwL / Math.Max(1e-6, wPublic));
+                            ptCurbRight = qR - acrossCorridor * (defSwR / Math.Max(1e-6, wPublic));
+                        }
                     }
 
                     var cL = ptCurbLeft.Value;
@@ -408,10 +422,12 @@ namespace Buraqueira_Urb
                     }),path);
 
                     existingDimensionsTree.Append(new GH_String($"L={wSwL_meas:F2} | R={wSwR_meas:F2} | Road={wRoad_meas:F2}"), path);
+                    Vector3d tanOnAxis = crv.TangentAt(t);
+                    tanOnAxis.Unitize();
                     samplesForPlanning.Add(new TransversalSample
                     {
                         StreetIndex = sIdx, StationIndex = stIdx, Station = distOnCrv, Name = street.Name,
-                        QL = qL, QR = qR, CL = cL, CR = cR, Axis = ptOnAxis, Normal = norm,
+                        QL = qL, QR = qR, CL = cL, CR = cR, Axis = ptOnAxis, Normal = norm, Tangent = tanOnAxis,
                         ExistingLeft = wSwL_meas, ExistingRight = wSwR_meas, Road = wRoad_meas
                     });
 
@@ -449,8 +465,10 @@ namespace Buraqueira_Urb
                 {
                     int end = start + 1;
                     while (end < ordered.Count &&
-                           ordered[end].StationIndex == ordered[end - 1].StationIndex + 1 &&
-                           ordered[end].Normal * ordered[end - 1].Normal > 0.9) end++;
+                           CurbRunTopology.BreakReason(ordered[end - 1].StationIndex,
+                               ordered[end].StationIndex, ordered[end - 1].Normal.X,
+                               ordered[end - 1].Normal.Y, ordered[end].Normal.X,
+                               ordered[end].Normal.Y, 0.9) == null) end++;
                     int n = end - start;
                     var leftExisting = new double[n];
                     var rightExisting = new double[n];
@@ -473,8 +491,12 @@ namespace Buraqueira_Urb
                     {
                         if (leftBoundary.Count >= 2) plannedBoundary.Add(new PolylineCurve(leftBoundary));
                         if (rightBoundary.Count >= 2) plannedBoundary.Add(new PolylineCurve(rightBoundary));
+
+                        // A single station is a point, not a measured longitudinal curb.
+                        // Keep hard corners until their geometry can be inferred from GIS.
                         if (leftCurbs.Count >= 2) plannedCurbBoundary.Add(new PolylineCurve(leftCurbs));
                         if (rightCurbs.Count >= 2) plannedCurbBoundary.Add(new PolylineCurve(rightCurbs));
+
                         leftBoundary.Clear(); rightBoundary.Clear(); leftCurbs.Clear(); rightCurbs.Clear();
                         previous = null;
                     }
@@ -523,10 +545,12 @@ namespace Buraqueira_Urb
                         plannedPointsTree.Append(new GH_Point(sample.QR), path);
                         plannedDimensionsTree.Append(new GH_String($"L={pl:F2} | R={pr:F2} | Road={plannedRoad:F2}"), path);
                         bool adjacentForMetrics = j > 0 && (mode == 0 || previous != null);
+
+                        leftBoundary.Add(sample.QL); rightBoundary.Add(sample.QR);
+                        leftCurbs.Add(plannedCL); rightCurbs.Add(plannedCR);
+
                         if (mode == 1)
                         {
-                            leftBoundary.Add(sample.QL); rightBoundary.Add(sample.QR);
-                            leftCurbs.Add(plannedCL); rightCurbs.Add(plannedCR);
                             double halfRoad = plannedRoad / 2.0;
                             sbCsv.AppendLine($"{sample.Name} Est.{sample.Station:F0},{pl:F2},0.25,{halfRoad:F2},{halfRoad:F2},0.25,{pr:F2},0.0,2.0,Falso,Quadra,Quadra");
                             maxDisplacement = Math.Max(maxDisplacement,
@@ -554,15 +578,27 @@ namespace Buraqueira_Urb
                                 Math.Max(Math.Abs(pl - leftPlanned[j - 1]), Math.Abs(pr - rightPlanned[j - 1])));
                         }
                     }
-                    if (mode == 1) FlushPlanningRun();
+                    FlushPlanningRun();
                     start = end;
                 }
             }
-            if (mode == 0) plannedBoundary.AddRange(blockCurves);
-            sbReport.AppendLine($"Planning: Mode={(mode == 0 ? "EXISTING" : "PLANNING")} | Minimum={stdSw:F2} | Local tolerance=0.30");
+            // Preserve the actual lot boundary; curb closure belongs to a validated
+            // intersection/topology stage, never to a block offset.
+            if (blockCurves != null && blockCurves.Count > 0)
+            {
+                // Planned Boundary (PlanBnd) preserva sempre os limites de quadra fixos (Hard Constraint)
+                foreach (var b in blockCurves)
+                {
+                    if (b != null && b.IsValid && !plannedBoundary.Contains(b))
+                    {
+                        plannedBoundary.Add(b);
+                    }
+                }
+            }
             if (measuredCount > 0)
                 sbReport.AppendLine($"Widths existing min/mean={existingMin:F2}/{existingSum / measuredCount:F2}; planned min/mean={plannedMin:F2}/{plannedSum / measuredCount:F2}; max neighbor jump {maxNeighborExisting:F2} -> {maxNeighborPlanned:F2}");
             sbReport.AppendLine($"Intervention area (sampled)={interventionArea:F2} m2 | Max displacement={maxDisplacement:F2} m | Missing geometry={missingGeometryCount}");
+            sbReport.AppendLine("PlanCurbs is an open section-sampled preview. Validate lot intrusion and intersections downstream; no curb rings are inferred from block offsets.");
             sbReport.AppendLine("================================================================================");
             sbReport.AppendLine($"TRANSVERSAIS CANDIDATAS: {candidateCount}");
             sbReport.AppendLine($"VÁLIDAS: {validTransversalCount} | REJEITADAS: {rejectedCrossing + rejectedNear + rejectedAmbiguous}");
@@ -770,6 +806,7 @@ namespace Buraqueira_Urb
             public string Name;
             public Point3d QL, QR, CL, CR, Axis;
             public Vector3d Normal;
+            public Vector3d Tangent;
         }
 
         private static double AddInterventionPatch(List<Brep> output, Point3d a, Point3d b,
@@ -799,6 +836,7 @@ namespace Buraqueira_Urb
 
                 object unwrapped = item;
                 while (unwrapped is GH_ObjectWrapper wrapper) unwrapped = wrapper.Value;
+                if (unwrapped == null) continue;
 
                 // Caso 0: ProfiledStreet vindo do Street Profile Assignment
                 if (unwrapped is ProfiledStreet ps)
@@ -816,78 +854,118 @@ namespace Buraqueira_Urb
                     continue;
                 }
 
-                // Caso 1: Caminho de arquivo .shp
-                if (item is string pathStr && File.Exists(pathStr) && pathStr.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
+                // Caso 0b: ShpFeature vindo de Features de ShpImport / GpkgImport
+                if (unwrapped is ShpFeature sf)
                 {
-                    var feats = ShapefileReader.ReadShapefile(pathStr, out var fieldNames);
-                    string chosenField = FindStreetNameField(fieldNames, nameField);
-
-                    foreach (var f in feats)
+                    string sName = "";
+                    string chosenField = FindStreetNameField(sf.Attributes?.Keys.ToList() ?? new List<string>(), nameField);
+                    if (!string.IsNullOrEmpty(chosenField) && sf.Attributes != null && sf.Attributes.TryGetValue(chosenField, out var sv))
                     {
-                        string sName = "";
-                        if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
-                        {
-                            sName = val?.ToString()?.Trim();
-                        }
-                        if (string.IsNullOrWhiteSpace(sName))
-                        {
-                            sName = $"Rua_{count++}";
-                        }
+                        sName = sv?.ToString()?.Trim() ?? "";
+                    }
+                    if (string.IsNullOrWhiteSpace(sName)) sName = $"Rua_{count++}";
 
-                        if (f.Curves != null)
+                    if (sf.Curves != null)
+                    {
+                        foreach (var c in sf.Curves)
                         {
-                            foreach (var c in f.Curves)
+                            if (c != null && c.IsValid)
                             {
-                                if (c != null && c.IsValid)
-                                {
-                                    result.Add(new StreetItem { Curve = c, Name = sName, SourceId = $"{Path.GetFileName(pathStr)}:{f.RecordNumber}" });
-                                }
+                                result.Add(new StreetItem { Curve = c, Name = sName, SourceId = $"{Path.GetFileName(sf.SourcePath ?? "import")}:{sf.RecordNumber}" });
                             }
                         }
                     }
                     continue;
                 }
 
-                // Caso 1b: Caminho de arquivo .gpkg (GeoPackage)
-                if (item is string gpkgPath && File.Exists(gpkgPath) && gpkgPath.EndsWith(".gpkg", StringComparison.OrdinalIgnoreCase))
+                // Caso 1: Caminho de arquivo GIS (.shp ou .gpkg) via GisPathResolver
+                if (GisPathResolver.TryResolveGisPath(unwrapped, out string resolvedPath, out _))
                 {
-                    var feats = GpkgReader.ReadGeoPackage(gpkgPath, null, out var fieldNames);
-                    string chosenField = FindStreetNameField(fieldNames, nameField);
-
-                    foreach (var f in feats)
+                    if (resolvedPath.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
                     {
-                        string sName = "";
-                        if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
-                        {
-                            sName = val?.ToString()?.Trim();
-                        }
-                        if (string.IsNullOrWhiteSpace(sName))
-                        {
-                            sName = $"Rua_{count++}";
-                        }
+                        var feats = ShapefileReader.ReadShapefile(resolvedPath, out var fieldNames);
+                        string chosenField = FindStreetNameField(fieldNames, nameField);
 
-                        if (f.Curves != null)
+                        foreach (var f in feats)
                         {
-                            foreach (var c in f.Curves)
+                            string sName = "";
+                            if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
                             {
-                                if (c != null && c.IsValid)
+                                sName = val?.ToString()?.Trim();
+                            }
+                            if (string.IsNullOrWhiteSpace(sName))
+                            {
+                                sName = $"Rua_{count++}";
+                            }
+
+                            if (f.Curves != null)
+                            {
+                                foreach (var c in f.Curves)
                                 {
-                                    result.Add(new StreetItem { Curve = c, Name = sName, SourceId = $"{Path.GetFileName(gpkgPath)}:{f.RecordNumber}" });
+                                    if (c != null && c.IsValid)
+                                    {
+                                        result.Add(new StreetItem { Curve = c, Name = sName, SourceId = $"{Path.GetFileName(resolvedPath)}:{f.RecordNumber}" });
+                                    }
                                 }
                             }
                         }
+                        continue;
                     }
-                    continue;
+                    else if (resolvedPath.EndsWith(".gpkg", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var feats = GpkgReader.ReadGeoPackage(resolvedPath, null, out var fieldNames);
+                        string chosenField = FindStreetNameField(fieldNames, nameField);
+
+                        foreach (var f in feats)
+                        {
+                            string sName = "";
+                            if (!string.IsNullOrEmpty(chosenField) && f.Attributes != null && f.Attributes.TryGetValue(chosenField, out var val))
+                            {
+                                sName = val?.ToString()?.Trim();
+                            }
+                            if (string.IsNullOrWhiteSpace(sName))
+                            {
+                                sName = $"Rua_{count++}";
+                            }
+
+                            if (f.Curves != null)
+                            {
+                                foreach (var c in f.Curves)
+                                {
+                                    if (c != null && c.IsValid)
+                                    {
+                                        result.Add(new StreetItem { Curve = c, Name = sName, SourceId = $"{Path.GetFileName(resolvedPath)}:{f.RecordNumber}" });
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
                 }
 
-                // Caso 2: Curva direta do Grasshopper (GH_Curve ou Curve)
+                // Caso 2: Curva direta do Grasshopper (GH_Curve, Curve, Line, Polyline)
                 Curve directCrv = null;
-                if (item is GH_Curve ghCrv) directCrv = ghCrv.Value;
-                else if (item is Curve crv) directCrv = crv;
+                if (unwrapped is GH_Curve ghCrv) directCrv = ghCrv.Value;
+                else if (unwrapped is Curve crv) directCrv = crv;
+                else if (unwrapped is GH_Line ghL) directCrv = new LineCurve(ghL.Value);
+                else if (unwrapped is Line l) directCrv = new LineCurve(l);
+                else if (unwrapped is Polyline pl) directCrv = new PolylineCurve(pl);
+                else if (unwrapped is IGH_GeometricGoo geoGoo)
+                {
+                    var geom = geoGoo.ScriptVariable();
+                    if (geom is Curve gc) directCrv = gc;
+                    else if (geom is Line gl) directCrv = new LineCurve(gl);
+                    else if (geom is Polyline gp) directCrv = new PolylineCurve(gp);
+                }
 
                 if (directCrv != null && directCrv.IsValid)
                 {
-                    result.Add(new StreetItem { Curve = directCrv, Name = $"Rua_{count++}", SourceId = $"GH:{result.Count}" });
+                    string curveName = directCrv.GetUserString("Name") ??
+                                       directCrv.GetUserString("NOME") ??
+                                       directCrv.GetUserString("RUA") ??
+                                       directCrv.GetUserString("LOGRADOURO");
+                    string sName = !string.IsNullOrWhiteSpace(curveName) ? curveName.Trim() : $"Rua_{count++}";
+                    result.Add(new StreetItem { Curve = directCrv, Name = sName, SourceId = $"GH:{result.Count}" });
                 }
             }
 
@@ -931,61 +1009,110 @@ namespace Buraqueira_Urb
             {
                 if (item == null) continue;
 
-                // Caminho .shp
-                if (item is string pathStr && File.Exists(pathStr) && pathStr.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
+                object unwrapped = item;
+                while (unwrapped is GH_ObjectWrapper wrapper) unwrapped = wrapper.Value;
+                if (unwrapped == null) continue;
+
+                // Caminho GIS (.shp ou .gpkg) via GisPathResolver
+                if (GisPathResolver.TryResolveGisPath(unwrapped, out string resolvedPath, out _))
                 {
-                    var feats = ShapefileReader.ReadShapefile(pathStr, out _);
-                    foreach (var f in feats)
+                    if (resolvedPath.EndsWith(".shp", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (f.Curves != null)
+                        var feats = ShapefileReader.ReadShapefile(resolvedPath, out _);
+                        foreach (var f in feats)
                         {
-                            foreach (var c in f.Curves)
+                            if (f.Curves != null)
                             {
-                                if (c != null && c.IsValid) curves.Add(c);
+                                foreach (var c in f.Curves)
+                                {
+                                    if (c != null && c.IsValid) curves.Add(c);
+                                }
+                            }
+                            if (f.Surface != null && f.Surface.IsValid)
+                            {
+                                curves.AddRange(f.Surface.GetWireframe(1));
                             }
                         }
+                        continue;
+                    }
+                    else if (resolvedPath.EndsWith(".gpkg", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var feats = GpkgReader.ReadGeoPackage(resolvedPath, null, out _);
+                        foreach (var f in feats)
+                        {
+                            if (f.Curves != null)
+                            {
+                                foreach (var c in f.Curves)
+                                {
+                                    if (c != null && c.IsValid) curves.Add(c);
+                                }
+                            }
+                            if (f.Surface != null && f.Surface.IsValid)
+                            {
+                                curves.AddRange(f.Surface.GetWireframe(1));
+                            }
+                        }
+                        continue;
+                    }
+                }
+
+                // ShpFeature (vindo de Features de ShpImport / GpkgImport)
+                if (unwrapped is ShpFeature sf)
+                {
+                    if (sf.Curves != null)
+                    {
+                        foreach (var c in sf.Curves)
+                        {
+                            if (c != null && c.IsValid) curves.Add(c);
+                        }
+                    }
+                    if (sf.Surface != null && sf.Surface.IsValid)
+                    {
+                        curves.AddRange(sf.Surface.GetWireframe(1));
                     }
                     continue;
                 }
 
-                // Caminho .gpkg
-                if (item is string gpkgPath && File.Exists(gpkgPath) && gpkgPath.EndsWith(".gpkg", StringComparison.OrdinalIgnoreCase))
-                {
-                    var feats = GpkgReader.ReadGeoPackage(gpkgPath, null, out _);
-                    foreach (var f in feats)
-                    {
-                        if (f.Curves != null)
-                        {
-                            foreach (var c in f.Curves)
-                            {
-                                if (c != null && c.IsValid) curves.Add(c);
-                            }
-                        }
-                    }
-                    continue;
-                }
-
-                // GH_Curve
-                if (item is GH_Curve ghC)
+                // GH_Curve / Curve
+                if (unwrapped is GH_Curve ghC)
                 {
                     if (ghC.Value != null && ghC.Value.IsValid) curves.Add(ghC.Value);
                 }
-                // Curve
-                else if (item is Curve c)
+                else if (unwrapped is Curve c)
                 {
                     if (c.IsValid) curves.Add(c);
                 }
+                else if (unwrapped is GH_Line ghL)
+                {
+                    curves.Add(new LineCurve(ghL.Value));
+                }
+                else if (unwrapped is Line l)
+                {
+                    curves.Add(new LineCurve(l));
+                }
+                else if (unwrapped is Polyline pl)
+                {
+                    curves.Add(new PolylineCurve(pl));
+                }
                 // Brep (Quadra como superfície)
-                else if (item is GH_Brep ghB)
+                else if (unwrapped is GH_Brep ghB)
                 {
                     if (ghB.Value != null && ghB.Value.IsValid)
                     {
                         curves.AddRange(ghB.Value.GetWireframe(1));
                     }
                 }
-                else if (item is Brep b)
+                else if (unwrapped is Brep b)
                 {
                     if (b.IsValid) curves.AddRange(b.GetWireframe(1));
+                }
+                else if (unwrapped is IGH_GeometricGoo geoGoo)
+                {
+                    var geom = geoGoo.ScriptVariable();
+                    if (geom is Curve gc && gc.IsValid) curves.Add(gc);
+                    else if (geom is Brep gb && gb.IsValid) curves.AddRange(gb.GetWireframe(1));
+                    else if (geom is Line gl) curves.Add(new LineCurve(gl));
+                    else if (geom is Polyline gp) curves.Add(new PolylineCurve(gp));
                 }
             }
 

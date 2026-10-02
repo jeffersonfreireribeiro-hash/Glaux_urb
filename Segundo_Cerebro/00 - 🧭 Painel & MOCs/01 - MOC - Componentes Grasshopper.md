@@ -7,6 +7,8 @@ tags: [moc, grasshopper, componentes]
 
 Este catálogo reúne a documentação técnica, entradas, saídas e algoritmos de todos os componentes da suíte **Buraqueira**.
 
+**Estado auditado do motor nativo em 01/10/2026:** [[DevLog - 2026-10-01 - Auditoria física e materiais Glaux Acoustics]]. Build Release/Debug 0/0; teste físico controlado 29/29; validação no canvas e save/reopen ainda pendentes. A versão do Types foi alinhada à v1.21.0 já publicada.
+
 ---
 
 ## 🔊 Buraqueira Acoustics (v1.01 — Motor Nativo) & Ponte Pachyderm
@@ -157,5 +159,21 @@ Ver [[DevLog - 2026-09-26 - Calibracao GPU e BDPT Preservado]]. BDPT/NEE mantido
 - [[Street Profile Definition]] — Street, Street Type e faixas variáveis com tipo/sentido/obrigatoriedade persistidos em cada parâmetro; Tree Strip e Furniture Strip incluídos.
 - [[Street Profile Assignment]] — Associação 1-para-N entre perfis conceituais e vias reais de atributos GIS (`NOME_LOG`), com modos exato/normalizado, detecção de conflitos (`UNMATCHED_STREET`, `AMBIGUOUS_PROFILE_MATCH`) e emissão de `ProfiledStreet`.
 - [[Street Profile Fitting]] — `Sections` tipadas + `Pts`/`PlanPts` → `Adapted`, `FitPts`, conflitos e objeto ajustado; leitura genérica de `Sections` corrigida em 1.1.1; listas de perfis com `SectionMeta` seguem como ponte de compatibilidade.
+- Pipeline Picuí (2026-10-02): [[Street Profile Assignment]].Profiled → [[Road Transversals]].Axis; `Sections` + `Pts` → [[Street Profile Fitting]]; `FitPts` + `Pts` + `Blocks` → [[Sidewalk Regularization]]. Cópia GH e limites da reconstrução em `docs/GLAUX_URB_PIPELINE_CURB_FIX_2026-10-02.md`.
 - [[Shp Import]] / [[Gpkg Import]] — `Fields[i] ↔ Attributes[{feição}][i]` com valores tipados; `Geometry by Feature` e `Features` preservam o vínculo. `Attrs` permanece legado; SHP aceita `.cpg`/override. Desde 1.2.0, [[Street Profile Assignment]] aceita `Features` diretamente.
 - Width Domain por faixa: `MinimumWidth|MaximumWidth`, largura fixa `[n,n]`, limites rígidos no fitting e `EXCESS_WIDTH` quando a caixa pública excede a soma dos máximos. `SectionMeta.SourceStreetID` / `StreetName` associam a via; `PathIdx` é posição temporária de fallback.
+
+## Glaux BIM — Modelo Semântico & Construtivo
+- [[BIM Core Lifecycle]] — Identidade, persistência por objeto Rhino e eventos; ver auditoria de 01/10/2026.
+- [[BIM Convert]] — Converte geometrias brutas do Rhino (Brep/Mesh) em objetos semânticos `GlauxBimObject`.
+- [[BIM Deconstruct]] — Decompõe o objeto BIM em sua geometria base, metadados, traits, nível altimétrico e relacionamentos.
+- [[BIM Property]] — Atribui ou extrai parâmetros tipados (Length, Area, Volume, Integer, Text, Boolean, etc.) com escopo de Instância ou Tipo.
+- [[BIM Query]] — Filtra elementos BIM por classificação IFC, categoria, nome de tipo, valores de propriedades e traits construtivos.
+- [[BIM Wall]] — Gera paredes arquitetônicas paramétricas com espessura, altura, vãos perfurados (`Openings`), volume e área líquida.
+- [[BIM Door]] — Porta paramétrica com batente, folha com ângulo de abertura (0-90°), cortador para parede (`Cutter`) e relação `Hosts`.
+- [[BIM Window]] — Janela paramétrica com requadro/marco, painéis de vidro translúcidos, peitoril (`SillHeight`), cortador (`Cutter`) e relação `Hosts`.
+- [[BIM Composite Structure]] — Cria sistemas construtivos em multicamadas (reboco, alvenaria, isolamento térmico/acústico, acabamento) com espessura automática.
+- [[BIM Graphic Overrides]] — Aplica regras de sobreposição gráfica e combinações temáticas (segurança contra incêndio, acústica, estrutura) via Rhino Display Conduit sem alterar os materiais do documento.
+- [[BIM Slab]] — Laje paramétrica multicamadas com contorno, furos internos (shafts) e plano de referência estável (`SlabReferencePlane`).
+- [[BIM Column]] — Pilar paramétrico com seção composta concêntrica envoltória (`WrappedAssembly` com núcleo estrutural + acabamentos).
+- [[BIM Void]] — Modificador paramétrico não-destrutivo de vazios/aberturas (`VoidModifier`) com corte orientado e preservação de identidade.

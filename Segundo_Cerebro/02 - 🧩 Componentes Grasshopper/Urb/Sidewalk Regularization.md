@@ -61,7 +61,7 @@ O nome e o GUID são mantidos para os arquivos GH existentes. No caminho princip
 | Existing Run Section Points | ExistRunPts | Point tree | Cinco pontos existentes por run |
 | Planning Conflicts | Conflicts | Text tree | Ausência de fitting, falta de quadras ou invasão de lote |
 
-Runs se quebram em estação ausente, mudança de orientação ou salto geométrico. As superfícies são módulos abertos entre estações; não fecham interseções nem substituem polígonos de quadra. O caminho legado ainda faz amostragem GIS para compatibilidade e será migrado depois de validar definições GH antigas. Como `Run` foi movido ao fim, conferir conexões de arquivos GH existentes após carregamento.
+Runs se quebram em estação ausente ou mudança de orientação transversal. Um antigo limite de distância baseado na largura da pista foi removido porque partia amostragens válidas de 25 m em ruas estreitas. Quebras registram `GAP`, estações anteriores/seguintes, distância e classificação em `Conflicts`. Cada `PlanCurbs` e `PlanEdge` agora representa uma sequência contínua de seções planejadas aceitas no caminho `{rua;run;lado}`; uma seção sem fitting ou com invasão de lote interrompe a curva. As superfícies são módulos abertos entre estações; não fecham interseções nem substituem polígonos de quadra. O `RunID` ainda é derivado localmente pelo componente e não está persistido em `ProfiledSection`; a integração de identidade estável de ponta a ponta segue pendente. O caminho legado ainda faz amostragem GIS para compatibilidade e será migrado depois de validar definições GH antigas. Como `Run` foi movido ao fim, conferir conexões de arquivos GH existentes após carregamento.
 
 ## 🔗 Conexões & Compatibilidade de Pilhas (Pills)
 

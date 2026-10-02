@@ -2,7 +2,13 @@ using System.Collections.Generic;
 
 namespace Rhino.Geometry
 {
-    public class Curve { public bool IsValid => true; }
+    public class Curve
+    {
+        public bool IsValid => true;
+        private readonly Dictionary<string, string> _userStrings = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+        public bool SetUserString(string key, string value) { _userStrings[key] = value; return true; }
+        public string GetUserString(string key) => _userStrings.TryGetValue(key, out var v) ? v : null;
+    }
     public class Brep
     {
         public bool IsValid => true;

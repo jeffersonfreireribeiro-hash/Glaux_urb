@@ -232,6 +232,7 @@ namespace Buraqueira_Urb
         public int FeatureIndex { get; set; }
         public string SourceId { get; set; }
         public Dictionary<string, object> Attributes { get; set; } = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        public string TreePath { get; set; }
 
         public override string ToString() => string.Format(CultureInfo.InvariantCulture,
             "ProfiledStreet: '{0}' (ID={1}) | Match={2} | Profile={3} | Length={4:F2}m",
@@ -260,6 +261,7 @@ namespace Buraqueira_Urb
         public string SourceId;
         public int FeatureIndex;
         public Dictionary<string, object> Attributes = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        public string TreePath;
     }
 
     public sealed class StreetProfileAssignmentResult
@@ -268,6 +270,8 @@ namespace Buraqueira_Urb
         public List<Curve> MatchedCurves = new List<Curve>();
         public List<Curve> UnmatchedCurves = new List<Curve>();
         public List<Curve> AmbiguousCurves = new List<Curve>();
+        public List<RawGisStreetItem> UnmatchedItems = new List<RawGisStreetItem>();
+        public List<RawGisStreetItem> AmbiguousItems = new List<RawGisStreetItem>();
         public List<string> Diagnostics = new List<string>();
         public int TotalFeatures;
         public int MatchedCount;
@@ -282,6 +286,44 @@ namespace Buraqueira_Urb
 
     public static class StreetProfileAssignmentService
     {
+        public static bool AreProfilesEquivalent(StreetProfile a, StreetProfile b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a == null || b == null) return false;
+
+            if (!string.Equals(a.StreetType ?? "", b.StreetType ?? "", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var elemsA = a.Elements ?? new List<StreetProfileElement>();
+            var elemsB = b.Elements ?? new List<StreetProfileElement>();
+            if (elemsA.Count != elemsB.Count) return false;
+
+            for (int i = 0; i < elemsA.Count; i++)
+            {
+                var ea = elemsA[i];
+                var eb = elemsB[i];
+                if (ea == null && eb == null) continue;
+                if (ea == null || eb == null) return false;
+
+                // Equal widths do not make independently defined profiles the same
+                // identity. Copies retain ElementIDs; competing definitions do not.
+                if (ea.Id != eb.Id) return false;
+
+                if (!string.Equals(ea.Type ?? "", eb.Type ?? "", StringComparison.OrdinalIgnoreCase))
+                    return false;
+                if (ea.Direction != eb.Direction)
+                    return false;
+                if (ea.Required != eb.Required)
+                    return false;
+                if (Math.Abs(ea.MinimumWidth - eb.MinimumWidth) > 1e-4)
+                    return false;
+                if (Math.Abs(ea.MaximumWidth - eb.MaximumWidth) > 1e-4)
+                    return false;
+            }
+
+            return true;
+        }
+
         public static StreetProfileAssignmentResult Assign(
             IEnumerable<RawGisStreetItem> gisItems,
             IEnumerable<StreetProfile> profiles,
@@ -303,9 +345,23 @@ namespace Buraqueira_Urb
                     list = new List<StreetProfile>();
                     profileGroups[key] = list;
                 }
-                list.Add(p);
+                // Evita tratar cópias idênticas/equivalentes do mesmo perfil como ambiguidade concorrente
+                if (!list.Any(existing => AreProfilesEquivalent(existing, p)))
+                {
+                    list.Add(p);
+                }
             }
 
+            // Identifica se há um perfil padrão/coringa (*) para fallback de vias não nomeadas ou sem match direto
+            var defaultProfile = profileList.FirstOrDefault(p =>
+                string.Equals(p.StreetName, "*", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.StreetName, "DEFAULT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.StreetName, "PADRAO", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.StreetName, "PADRÃO", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.StreetName, "RUA", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.StreetName, "VIAS", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.StreetName, "LOGRADOURO", StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(p.StreetName));
             // Map each GIS item
             for (int i = 0; i < itemList.Count; i++)
             {
@@ -315,7 +371,31 @@ namespace Buraqueira_Urb
 
                 if (string.IsNullOrEmpty(matchKey))
                 {
+                    if (defaultProfile != null)
+                    {
+                        var profiledDefault = new ProfiledStreet
+                        {
+                            StreetID = item.SourceId ?? $"Street_{i}",
+                            StreetName = string.IsNullOrWhiteSpace(streetName) ? defaultProfile.StreetName : streetName,
+                            SourceGeometry = item.Geometry,
+                            StreetProfile = defaultProfile,
+                            MatchInfo = "DEFAULT_PROFILE_FALLBACK",
+                            FeatureIndex = item.FeatureIndex,
+                            SourceId = item.SourceId,
+                            Attributes = item.Attributes != null ? new Dictionary<string, object>(item.Attributes, StringComparer.OrdinalIgnoreCase) : new Dictionary<string, object>(),
+                            TreePath = item.TreePath
+                        };
+                        result.Profiled.Add(profiledDefault);
+                        result.MatchedCount++;
+                        if (item.Geometry != null) result.MatchedCurves.Add(item.Geometry);
+                        result.Diagnostics.Add(string.Format(CultureInfo.InvariantCulture,
+                            "[{0}] ID={1} | Name='{2}' -> MATCH: Perfil padrão '{3}' atribuído por fallback (nome vazio no GIS).",
+                            i, item.SourceId ?? i.ToString(), streetName, defaultProfile.StreetName));
+                        continue;
+                    }
+
                     result.UnmatchedCount++;
+                    result.UnmatchedItems.Add(item);
                     if (item.Geometry != null) result.UnmatchedCurves.Add(item.Geometry);
                     result.Diagnostics.Add(string.Format(CultureInfo.InvariantCulture,
                         "[{0}] ID={1} | Name='{2}' -> {3}: Nome de logradouro vazio.",
@@ -325,7 +405,44 @@ namespace Buraqueira_Urb
 
                 if (!profileGroups.TryGetValue(matchKey, out var candidateProfiles) || candidateProfiles.Count == 0)
                 {
+                    // Tenta correspondência pelo tipo de via (ex: TIPO='Rua' correspondendo a perfil 'Rua')
+                    if (item.Attributes != null && item.Attributes.TryGetValue("TIPO", out var tipoVal) && tipoVal != null)
+                    {
+                        string tipoKey = normalized ? StreetNameNormalizer.Normalize(tipoVal.ToString()) : tipoVal.ToString().Trim();
+                        if (!string.IsNullOrEmpty(tipoKey) && profileGroups.TryGetValue(tipoKey, out var tipoProfiles) && tipoProfiles.Count > 0)
+                        {
+                            candidateProfiles = tipoProfiles;
+                        }
+                    }
+                }
+
+                if (candidateProfiles == null || candidateProfiles.Count == 0)
+                {
+                    if (defaultProfile != null)
+                    {
+                        var profiledFallback = new ProfiledStreet
+                        {
+                            StreetID = item.SourceId ?? $"Street_{i}",
+                            StreetName = streetName,
+                            SourceGeometry = item.Geometry,
+                            StreetProfile = defaultProfile,
+                            MatchInfo = "DEFAULT_PROFILE_FALLBACK",
+                            FeatureIndex = item.FeatureIndex,
+                            SourceId = item.SourceId,
+                            Attributes = item.Attributes != null ? new Dictionary<string, object>(item.Attributes, StringComparer.OrdinalIgnoreCase) : new Dictionary<string, object>(),
+                            TreePath = item.TreePath
+                        };
+                        result.Profiled.Add(profiledFallback);
+                        result.MatchedCount++;
+                        if (item.Geometry != null) result.MatchedCurves.Add(item.Geometry);
+                        result.Diagnostics.Add(string.Format(CultureInfo.InvariantCulture,
+                            "[{0}] ID={1} | Name='{2}' -> MATCH: Perfil padrão '{3}' atribuído por fallback.",
+                            i, item.SourceId ?? i.ToString(), streetName, defaultProfile.StreetName));
+                        continue;
+                    }
+
                     result.UnmatchedCount++;
+                    result.UnmatchedItems.Add(item);
                     if (item.Geometry != null) result.UnmatchedCurves.Add(item.Geometry);
                     result.Diagnostics.Add(string.Format(CultureInfo.InvariantCulture,
                         "[{0}] ID={1} | Name='{2}' -> {3}: Nenhum perfil correspondente encontrado.",
@@ -336,6 +453,7 @@ namespace Buraqueira_Urb
                 if (candidateProfiles.Count > 1)
                 {
                     result.AmbiguousCount++;
+                    result.AmbiguousItems.Add(item);
                     if (item.Geometry != null) result.AmbiguousCurves.Add(item.Geometry);
                     result.Diagnostics.Add(string.Format(CultureInfo.InvariantCulture,
                         "[{0}] ID={1} | Name='{2}' -> {3}: {4} perfis competem pelo mesmo nome ('{5}').",
@@ -355,7 +473,8 @@ namespace Buraqueira_Urb
                     MatchInfo = normalized ? "NORMALIZED_MATCH" : "EXACT_MATCH",
                     FeatureIndex = item.FeatureIndex,
                     SourceId = item.SourceId,
-                    Attributes = item.Attributes != null ? new Dictionary<string, object>(item.Attributes, StringComparer.OrdinalIgnoreCase) : new Dictionary<string, object>()
+                    Attributes = item.Attributes != null ? new Dictionary<string, object>(item.Attributes, StringComparer.OrdinalIgnoreCase) : new Dictionary<string, object>(),
+                    TreePath = item.TreePath
                 };
 
                 result.Profiled.Add(profiled);

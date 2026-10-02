@@ -62,7 +62,7 @@ Sem os dois meios-fios, a seção permanece em `Lines`, mas não recebe largura 
 | Existing Block Boundary | ExistBnd | Curve list | Quadras originais |
 | Fixed Street Boundary | Curbs | Curve list | Limites viários originais |
 | Planned Section Points | PlanPts | Point tree | Quadra fixa, meio-fio proposto, centro, meio-fio proposto, quadra fixa |
-| Planned Curb Boundary | PlanCurbs | Curve list | Meio-fio proposto por trecho viável |
+| Planned Curb Boundary | PlanCurbs | Curve list | Meio-fios amostrados por sequência de estacas válidas e lado; uma estaca isolada não cria linha nem há fechamento automático de esquinas |
 | Section Metadata | SectionMeta | Text tree | Tipo, razão, estaca, lado, fonte, vértice e perfil (`Profile`, `StreetName`, `SourceStreetID`) por candidato |
 | Profiled Sections | Sections | ProfiledSection tree | Seções aceitas com cinco pontos, StreetID, StreetName e StreetProfile tipado |
 
@@ -96,5 +96,9 @@ Amostragem: vértices de quadra/lote com mudança relevante são projetados no e
 
 Limiar inicial calibrado com o SHP de Picuí: 12 graus, ruído de segmento abaixo de 0,20 m, matching transversal de 0,75 m, união de 0,25 m com exceção para salto lateral acima de 0,30 m. Detalhes e [comparação antes/depois](../../../docs/GLAUX_URB_ADAPTIVE_SECTIONS_2026-09-30.md) no relatório técnico. Testes do núcleo: 12/12; auditoria independente da Francisco de Freitas: 12 seções regulares vs. 34 estações adaptativas (28 obrigatórias, 6 suporte). Validação do GHA no Grasshopper pendente.
 
+## Caminhos GIS e limites do `PlanCurbs` — 2026-10-02
 
-
+1. **Entrada de Arquivos Diretos (`GisPathResolver`):** Os inputs `Axis`, `Blocks` e `Curbs` aceitam nativamente caminhos de arquivos `.shp` e `.gpkg`, seja como `string` ou `GH_String` conectada via Panels do Grasshopper ou parâmetros File Path.
+2. **Síntese de Meio-Fio no Modo Planning:** Em bases cadastrais onde inexiste camada física de meios-fios existentes (como em Picuí, onde há apenas eixos e quadras), o modo Planning sintetiza automaticamente os meios-fios base a partir do domínio público (`wPublic`), viabilizando a análise e dimensionamento sem rejeitar as estações por `MISSING_STREET_BOUNDARY`.
+3. **Correção:** a implementação anterior adicionava offsets fechados de quadra e fillets de raio arbitrário ao `PlanCurbs`, além de linhas fictícias de 2 m para estações isoladas. Esses três comportamentos foram removidos: os offsets não comprovavam a topologia viária nem a ausência de invasão de lote.
+4. **Limite atual:** `PlanCurbs` ainda é uma lista de curvas por trechos de eixo, sem identidade de `Run` na árvore. Para reconstrução por `{rua;run;lado}`, conectar `Pts`, `FitPts` e `Blocks` em [[Sidewalk Regularization]]. Interseções e anéis públicos fechados continuam pendentes de classificação topológica e validação geométrica; não são inferidos de quadras fechadas.

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Globalization;
@@ -148,6 +148,22 @@ namespace Buraqueira_Urb
 
                         default:
                             break;
+                    }
+
+                    // Anexar atributos às curvas para permitir consulta direta por nome/metadados
+                    if (feature.Attributes != null && feature.Curves != null)
+                    {
+                        foreach (var crv in feature.Curves)
+                        {
+                            if (crv == null) continue;
+                            foreach (var kvp in feature.Attributes)
+                            {
+                                if (kvp.Value != null)
+                                {
+                                    crv.SetUserString(kvp.Key, kvp.Value.ToString());
+                                }
+                            }
+                        }
                     }
 
                     // Pular para o final do registro
